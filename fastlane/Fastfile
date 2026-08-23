@@ -70,7 +70,7 @@ platform :ios do
       profile_name: "match AppStore #{extension_bundle_id}"
     )
 
-    build_app(
+    ipa_path = build_app(
       project: project_path,
       scheme: scheme_name,
       export_method: "app-store",
@@ -84,8 +84,12 @@ platform :ios do
       }
     )
 
+    embedded_framework = "Payload/SMBDrop.app/Frameworks/AMSMB2.framework/AMSMB2"
+    sh("unzip", "-l", ipa_path, embedded_framework)
+
     upload_to_testflight(
       api_key: key,
+      ipa: ipa_path,
       skip_waiting_for_build_processing: true
     )
   end

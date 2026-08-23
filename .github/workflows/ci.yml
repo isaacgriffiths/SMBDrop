@@ -28,6 +28,9 @@ jobs:
       - name: Generate Xcode project
         run: xcodegen generate
 
+      - name: Check dynamic framework embedding configuration
+        run: node scripts/check-framework-embedding.mjs
+
       - name: Resolve Swift packages
         run: |
           xcodebuild \
@@ -46,3 +49,8 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             COMPILER_INDEX_STORE_ENABLE=NO \
             build
+
+      - name: Verify dynamic framework is inside the app bundle
+        run: |
+          test -f \
+            DerivedData/Build/Products/Debug-iphonesimulator/SMBDrop.app/Frameworks/AMSMB2.framework/AMSMB2

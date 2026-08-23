@@ -28,6 +28,7 @@ targets:
     dependencies:
       - target: ShareExtension
       - package: AMSMB2
+        embed: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.isaacgriffiths.smbdrop
