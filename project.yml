@@ -59,6 +59,18 @@ targets:
         TARGETED_DEVICE_FAMILY: "1,2"
         APPLICATION_EXTENSION_API_ONLY: YES
         LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks"
+  SMBDropTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - SMBDropTests
+    dependencies:
+      - target: SMBDrop
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.isaacgriffiths.smbdrop.Tests
+        GENERATE_INFOPLIST_FILE: YES
+        CODE_SIGNING_ALLOWED: NO
 schemes:
   SMBDrop:
     build:
@@ -68,3 +80,6 @@ schemes:
       config: Debug
     archive:
       config: Release
+    test:
+      targets:
+        - SMBDropTests

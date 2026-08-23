@@ -54,3 +54,33 @@ jobs:
         run: |
           test -f \
             DerivedData/Build/Products/Debug-iphonesimulator/SMBDrop.app/Frameworks/AMSMB2.framework/AMSMB2
+
+      - name: Run unit tests
+        run: |
+          SIMULATOR_UDID="$(python3 - <<'PY'
+          import json
+          import subprocess
+
+          devices = json.loads(
+              subprocess.check_output(["xcrun", "simctl", "list", "devices", "available", "--json"])
+          )["devices"]
+          for runtime, candidates in devices.items():
+              if "SimRuntime.iOS" not in runtime:
+                  continue
+              for device in candidates:
+                  if device.get("isAvailable"):
+                      print(device["udid"])
+                      raise SystemExit
+          raise SystemExit("No available iOS simulator")
+          PY
+          )"
+          xcrun simctl boot "$SIMULATOR_UDID" || true
+          xcrun simctl bootstatus "$SIMULATOR_UDID" -b
+          xcodebuild \
+            -project SMBDrop.xcodeproj \
+            -scheme SMBDrop \
+            -destination "platform=iOS Simulator,id=$SIMULATOR_UDID" \
+            -derivedDataPath DerivedData \
+            CODE_SIGNING_ALLOWED=NO \
+            COMPILER_INDEX_STORE_ENABLE=NO \
+            test
