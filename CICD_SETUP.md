@@ -49,11 +49,8 @@ gh run watch --repo isaacgriffiths/SMBDrop --exit-status
 ## Build and release
 
 - `CI` generates the Xcode project and performs an unsigned simulator build.
-- `Release to TestFlight` generates the project, installs both match profiles,
+- `Release to TestFlight` runs for every push to `main` (and can also be
+  dispatched manually), generates the project, installs both match profiles,
   archives the app with its embedded share extension, and uploads the build.
 - GitHub's run number becomes `CFBundleVersion`; the app and extension share
   the same project-wide version settings, as Apple requires.
-
-Release is manual until the first signing run succeeds. After that bootstrap,
-the release workflow is configured to run for every push to `main` as well as
-by manual dispatch.

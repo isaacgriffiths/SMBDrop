@@ -1,8 +1,9 @@
 name: Release to TestFlight
 
-# Kept manual until init-signing has created both provisioning profiles. Once
-# that run is green, push-to-main delivery is enabled in this same file.
 on:
+  push:
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
