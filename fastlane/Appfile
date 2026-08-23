@@ -1,0 +1,4 @@
+app_identifier(ENV["APP_BUNDLE_ID"])
+
+# Authentication is handled by the App Store Connect API key in the Fastfile,
+# so no Apple ID or interactive login is required on the CI runner.

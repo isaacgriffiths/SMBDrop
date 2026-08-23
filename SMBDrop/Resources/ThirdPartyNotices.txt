@@ -1,0 +1,16 @@
+SMBDrop third-party software notices
+
+AMSMB2 4.0.3
+Copyright (c) 2016–2025 Amin Sakhshi
+https://github.com/amosavian/AMSMB2
+
+AMSMB2's Swift wrapper is available under the MIT License. It dynamically
+links libsmb2, which is available under the GNU Lesser General Public License
+version 2.1. Source code and the complete licence terms are available at:
+
+https://github.com/amosavian/AMSMB2/tree/4.0.3
+https://github.com/sahlberg/libsmb2
+https://www.gnu.org/licenses/old-licenses/lgpl-2.1.html
+
+SMBDrop does not restrict reverse engineering for the purpose of debugging
+modifications to these libraries.

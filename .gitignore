@@ -2,4 +2,10 @@
 .env.local
 *.xcodeproj
 DerivedData/
+.bundle/
+build/
+fastlane/report.xml
+fastlane/README.md
+*.ipa
+*.dSYM.zip
 .DS_Store

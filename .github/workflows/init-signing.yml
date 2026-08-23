@@ -1,0 +1,32 @@
+name: Init signing (run once per app)
+
+# Creates or refreshes the App Store profiles for the app and share extension.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  init:
+    runs-on: macos-15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Ruby and cache Fastlane
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.3"
+          bundler-cache: true
+
+      - name: Create or sync signing assets with match
+        run: bundle exec fastlane init_signing
+        env:
+          APP_BUNDLE_ID: ${{ vars.APP_BUNDLE_ID }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+          MATCH_GIT_URL: ${{ secrets.MATCH_GIT_URL }}
+          MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
+          MATCH_GIT_BASIC_AUTHORIZATION: ${{ secrets.MATCH_GIT_BASIC_AUTHORIZATION }}
