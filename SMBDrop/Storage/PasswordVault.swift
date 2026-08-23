@@ -23,7 +23,7 @@ struct KeychainPasswordVault: PasswordVault {
             return nil
         }
         guard status == errSecSuccess else {
-            throw KeychainError(status: status)
+            throw KeychainError.status(status)
         }
         guard
             let data = result as? Data,
@@ -46,7 +46,7 @@ struct KeychainPasswordVault: PasswordVault {
             return
         }
         guard updateStatus == errSecItemNotFound else {
-            throw KeychainError(status: updateStatus)
+            throw KeychainError.status(updateStatus)
         }
 
         var item = baseQuery
@@ -54,14 +54,14 @@ struct KeychainPasswordVault: PasswordVault {
         item[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
         let addStatus = SecItemAdd(item as CFDictionary, nil)
         guard addStatus == errSecSuccess else {
-            throw KeychainError(status: addStatus)
+            throw KeychainError.status(addStatus)
         }
     }
 
     func removePassword() throws {
         let status = SecItemDelete(baseQuery as CFDictionary)
         guard status == errSecSuccess || status == errSecItemNotFound else {
-            throw KeychainError(status: status)
+            throw KeychainError.status(status)
         }
     }
 
