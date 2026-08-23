@@ -1,0 +1,5 @@
+﻿.claude/
+.env.local
+*.xcodeproj
+DerivedData/
+.DS_Store
