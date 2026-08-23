@@ -1,0 +1,67 @@
+# XcodeGen project definition. The .xcodeproj is generated on the macOS runner
+# (xcodegen generate) in ci.yml and release.yml — it is never committed, because
+# this repo is developed on Windows where Xcode does not exist. Target-level
+# changes (new files are picked up automatically) happen here, not in a pbxproj.
+name: SMBDrop
+options:
+  createIntermediateGroups: true
+  deploymentTarget:
+    iOS: "17.0"
+settings:
+  base:
+    SWIFT_VERSION: "5.10"
+    MARKETING_VERSION: 0.1.0
+    CURRENT_PROJECT_VERSION: 1
+    # agvtool (fastlane increment_build_number) keeps app + extension
+    # CFBundleVersion in the lockstep Apple requires.
+    VERSIONING_SYSTEM: apple-generic
+packages:
+  AMSMB2:
+    url: https://github.com/amosavian/AMSMB2
+    majorVersion: 4.0.0
+targets:
+  SMBDrop:
+    type: application
+    platform: iOS
+    sources:
+      - SMBDrop
+    dependencies:
+      - target: ShareExtension
+      - package: AMSMB2
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.isaacgriffiths.smbdrop
+        PRODUCT_NAME: SMBDrop
+        GENERATE_INFOPLIST_FILE: NO
+        INFOPLIST_FILE: SMBDrop/SupportFiles/Info.plist
+        CODE_SIGN_ENTITLEMENTS: SMBDrop/SupportFiles/SMBDrop.entitlements
+        TARGETED_DEVICE_FAMILY: "1,2"
+        ENABLE_PREVIEWS: YES
+  ShareExtension:
+    type: app-extension
+    platform: iOS
+    sources:
+      - ShareExtension
+    dependencies:
+      # AMSMB2 is a dynamic framework embedded once, in the app bundle; the
+      # extension links against the app's copy via the runpath below.
+      - package: AMSMB2
+        embed: false
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.isaacgriffiths.smbdrop.ShareExtension
+        PRODUCT_NAME: ShareExtension
+        GENERATE_INFOPLIST_FILE: NO
+        INFOPLIST_FILE: ShareExtension/Info.plist
+        CODE_SIGN_ENTITLEMENTS: ShareExtension/ShareExtension.entitlements
+        TARGETED_DEVICE_FAMILY: "1,2"
+        LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks"
+schemes:
+  SMBDrop:
+    build:
+      targets:
+        SMBDrop: all
+    run:
+      config: Debug
+    archive:
+      config: Release
