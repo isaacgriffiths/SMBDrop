@@ -17,4 +17,44 @@ final class DestinationTests: XCTestCase {
         XCTAssertEqual(destination.serverURL.absoluteString, "smb://nas.local")
         XCTAssertEqual(destination.remotePath, "/iPhone Uploads")
     }
+
+    func testSavedDestinationLoadsWithPasswordFromVault() throws {
+        let suiteName = "SMBDropTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let passwordVault = MemoryPasswordVault()
+        let store = DestinationStore(defaults: defaults, passwordVault: passwordVault)
+        let destination = try Destination(
+            host: "nas.local",
+            share: "Photos",
+            subfolder: "iPhone Uploads",
+            username: "isaac"
+        )
+
+        try store.save(destination: destination, password: "super-secret")
+
+        let saved = try XCTUnwrap(store.load())
+        XCTAssertEqual(saved.destination, destination)
+        XCTAssertEqual(saved.password, "super-secret")
+        XCTAssertFalse(defaults.dictionaryRepresentation().values.contains {
+            String(describing: $0).contains("super-secret")
+        })
+    }
+}
+
+private final class MemoryPasswordVault: PasswordVault {
+    private var password: String?
+
+    func readPassword() throws -> String? {
+        password
+    }
+
+    func savePassword(_ password: String) throws {
+        self.password = password
+    }
+
+    func removePassword() throws {
+        password = nil
+    }
 }
