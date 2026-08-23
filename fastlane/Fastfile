@@ -96,7 +96,11 @@ platform :ios do
       type: "appstore",
       app_identifier: all_bundle_ids,
       api_key: asc_api_key,
-      readonly: false
+      readonly: false,
+      # This manually-dispatched lane is also the recovery path after changing
+      # App ID capabilities (for example, attaching an App Group). Regenerate
+      # profiles so their entitlements always reflect the portal state.
+      force: true
     )
   end
 end
