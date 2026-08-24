@@ -15,3 +15,19 @@
 - The non-secret fields live in the shared App Group. The password lives in the iOS Keychain and is never stored in preferences or logs.
 - Save is available only after Test Connection succeeds for the exact current field values. Editing any value requires another test.
 - Test Connection opens the share and verifies the configured subfolder. Failures are translated into friendly authentication, timeout, reachability, and missing-path messages.
+
+## Transfer contract (v1)
+
+- SMBDrop preserves the original bytes and filename for photos, Live Photo resources, RAW files, videos, and arbitrary shared files. It does not transcode HEIC or video.
+- Files land directly in the Destination subfolder. If the name already exists, SMBDrop appends ` (2)`, ` (3)`, and so on; it never overwrites an existing file.
+- Transfers run one item at a time in queue order. Each upload streams from a local file URL, writes to a unique `.smbdrop-partial` remote name, verifies the uploaded byte count, and then renames into place.
+- Every item is staged in a durable App Group outbox before upload. Interrupted uploads remain retryable; completed files are removed from local staging but retained as lightweight history.
+- Automatic retry is bounded. A failed item stays visible with a friendly error and can be retried by the user; queued items after it are not discarded.
+- SMB is a local-network protocol, so v1 has no separate Wi-Fi-only switch or custom port/dialect controls.
+
+## Share Extension architecture (v1)
+
+- The durable outbox is the always-correct backbone shared by both targets. The extension copies item-provider file representations into it one at a time and never buffers complete media in memory.
+- Small shares may drain inline while the share sheet remains open. Large shares, dismissal, or any inline failure leave the staged items queued for the Main App rather than losing them.
+- The extension cannot promise background SMB transfer after dismissal. It tells the user when work is queued and the Main App resumes on its next foreground run.
+- Activation is bounded to images, movies, and files; the extension never uses `TRUEPREDICATE`.
