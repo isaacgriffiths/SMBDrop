@@ -49,17 +49,56 @@ final class TransferOutboxTests: XCTestCase {
             now: { firstClaimDate }
         )
         let staged = try await crashedProcess.enqueueFile(at: sourceURL, filename: "clip.mov")
-        let abandonedWork = try XCTUnwrap(try await crashedProcess.claimNext())
+        let abandonedClaim = try await crashedProcess.claimNext()
+        let abandonedWork = try XCTUnwrap(abandonedClaim)
 
         let restartedProcess = TransferOutbox(
             rootURL: outboxURL,
             claimLeaseDuration: 60,
             now: { firstClaimDate.addingTimeInterval(61) }
         )
-        let recoveredWork = try XCTUnwrap(try await restartedProcess.claimNext())
+        let recoveredClaim = try await restartedProcess.claimNext()
+        let recoveredWork = try XCTUnwrap(recoveredClaim)
 
         XCTAssertEqual(recoveredWork.transfer.id, staged.id)
         XCTAssertNotEqual(recoveredWork.claimID, abandonedWork.claimID)
         XCTAssertEqual(recoveredWork.transfer.attemptCount, 2)
+    }
+
+    func testFailedTransferKeepsItsErrorAndCanBeRetried() async throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("SMBDropTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        let sourceURL = rootURL.appendingPathComponent("document.pdf")
+        try Data("original document bytes".utf8).write(to: sourceURL)
+        let outboxURL = rootURL.appendingPathComponent("Outbox", isDirectory: true)
+        let outbox = TransferOutbox(rootURL: outboxURL)
+
+        let staged = try await outbox.enqueueFile(at: sourceURL, filename: "document.pdf")
+        let firstClaim = try await outbox.claimNext()
+        let work = try XCTUnwrap(firstClaim)
+        let failed = try await outbox.fail(work, message: "The share stopped responding.")
+
+        XCTAssertEqual(failed.status, .failed)
+        XCTAssertEqual(failed.errorMessage, "The share stopped responding.")
+
+        let restartedProcess = TransferOutbox(rootURL: outboxURL)
+        let persistedTransfers = try await restartedProcess.transfers()
+        let persisted = try XCTUnwrap(persistedTransfers.first)
+        XCTAssertEqual(persisted.id, staged.id)
+        XCTAssertEqual(persisted.status, .failed)
+        XCTAssertEqual(persisted.errorMessage, "The share stopped responding.")
+        XCTAssertNil(try await restartedProcess.claimNext())
+
+        let retried = try await restartedProcess.retry(staged.id)
+        XCTAssertEqual(retried.status, .queued)
+        XCTAssertNil(retried.errorMessage)
+
+        let secondClaim = try await restartedProcess.claimNext()
+        let reclaimed = try XCTUnwrap(secondClaim)
+        XCTAssertEqual(reclaimed.transfer.id, staged.id)
+        XCTAssertEqual(reclaimed.transfer.attemptCount, 2)
     }
 }
