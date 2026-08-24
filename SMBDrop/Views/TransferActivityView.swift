@@ -19,6 +19,16 @@ struct TransferActivityView: View {
                     Text(progress.countText)
                         .font(.subheadline.monospacedDigit().weight(.semibold))
                         .foregroundStyle(.secondary)
+                    if progress.isComplete {
+                        Button {
+                            transferQueue.dismissProgress()
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundStyle(.tertiary)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Dismiss completed transfer")
+                    }
                 }
 
                 ProgressView(value: progress.fractionCompleted)

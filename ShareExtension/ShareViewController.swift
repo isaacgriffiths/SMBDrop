@@ -11,7 +11,6 @@ final class ShareViewController: UIViewController {
     private let progressView = UIProgressView(progressViewStyle: .default)
     private let actionButton = UIButton(configuration: .borderedProminent())
     private var destinations: [SavedDestination] = []
-    private var selectedDestination: SavedDestination?
     private var transferSnapshots: [UUID: Transfer] = [:]
     private var workTask: Task<Void, Never>?
 
@@ -50,11 +49,7 @@ final class ShareViewController: UIViewController {
         progressView.isHidden = true
         progressView.widthAnchor.constraint(equalToConstant: 260).isActive = true
 
-        actionButton.configuration?.title = "Send Items"
-        actionButton.isEnabled = false
-        actionButton.addAction(UIAction { [weak self] _ in
-            self?.startSelectedUpload()
-        }, for: .touchUpInside)
+        actionButton.isHidden = true
 
         let stack = UIStackView(
             arrangedSubviews: [
@@ -82,11 +77,12 @@ final class ShareViewController: UIViewController {
     private func loadDestinations() {
         do {
             destinations = try DestinationStore().loadAll()
-            guard let first = destinations.first else {
+            guard !destinations.isEmpty else {
                 showFailure("Open SMBDrop, go to Settings, and add an SMB share first.")
                 return
             }
-            selectDestination(first)
+            destinationButton.configuration?.title = "Choose Share"
+            destinationButton.configuration?.subtitle = nil
             destinationButton.menu = UIMenu(
                 title: "Choose an SMB Share",
                 children: destinations.map { destination in
@@ -94,45 +90,28 @@ final class ShareViewController: UIViewController {
                         title: destination.summary.displayName,
                         subtitle: destination.summary.displayPath,
                         image: UIImage(systemName: "externaldrive.fill"),
-                        state: destination.id == selectedDestination?.id ? .on : .off
+                        state: .off
                     ) { [weak self] _ in
-                        Task { @MainActor in self?.selectDestination(destination) }
+                        Task { @MainActor in self?.startUpload(to: destination) }
                     }
                 }
             )
-            actionButton.isEnabled = !itemProviders.isEmpty
+            if itemProviders.isEmpty {
+                showFailure(ShareExtensionError.noItems.localizedDescription)
+            }
         } catch {
             showFailure(error.localizedDescription)
         }
     }
 
-    private func selectDestination(_ destination: SavedDestination) {
-        selectedDestination = destination
+    private func startUpload(to destination: SavedDestination) {
+        guard workTask == nil else { return }
         destinationButton.configuration?.title = destination.summary.displayName
         destinationButton.configuration?.subtitle = destination.summary.displayPath
-        destinationButton.menu = UIMenu(
-            title: "Choose an SMB Share",
-            children: destinations.map { candidate in
-                UIAction(
-                    title: candidate.summary.displayName,
-                    subtitle: candidate.summary.displayPath,
-                    image: UIImage(systemName: "externaldrive.fill"),
-                    state: candidate.id == destination.id ? .on : .off
-                ) { [weak self] _ in
-                    Task { @MainActor in self?.selectDestination(candidate) }
-                }
-            }
-        )
-    }
-
-    private func startSelectedUpload() {
-        guard workTask == nil, let selectedDestination else { return }
         destinationButton.isEnabled = false
-        actionButton.isEnabled = false
-        actionButton.configuration?.title = "Please Wait"
         progressView.isHidden = false
         workTask = Task { [weak self] in
-            await self?.stageAndUploadItems(to: selectedDestination)
+            await self?.stageAndUploadItems(to: destination)
         }
     }
 
@@ -234,6 +213,7 @@ final class ShareViewController: UIViewController {
         statusLabel.textColor = .secondaryLabel
         progressView.progress = 1
         destinationButton.isHidden = true
+        actionButton.isHidden = false
         actionButton.configuration?.title = "Done"
         actionButton.isEnabled = true
         actionButton.removeTarget(nil, action: nil, for: .allEvents)
@@ -246,6 +226,7 @@ final class ShareViewController: UIViewController {
         icon.image = UIImage(systemName: "clock.arrow.circlepath")
         statusLabel.text = "Queued \(count) item\(count == 1 ? "" : "s"). Open SMBDrop to finish uploading."
         destinationButton.isHidden = true
+        actionButton.isHidden = false
         actionButton.configuration?.title = "Done"
         actionButton.isEnabled = true
         actionButton.removeTarget(nil, action: nil, for: .allEvents)
@@ -261,6 +242,7 @@ final class ShareViewController: UIViewController {
         statusLabel.textColor = .systemRed
         progressView.isHidden = true
         destinationButton.isHidden = destinations.isEmpty
+        actionButton.isHidden = false
         actionButton.configuration?.title = "Done"
         actionButton.isEnabled = true
         actionButton.removeTarget(nil, action: nil, for: .allEvents)

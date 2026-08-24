@@ -4,6 +4,7 @@ struct SettingsView: View {
     @ObservedObject var viewModel: DestinationSetupViewModel
     @ObservedObject var transferQueue: TransferQueueViewModel
     @State private var destinationToRemove: DestinationSummary?
+    @State private var blockedDestinationRemoval: DestinationSummary?
 
     var body: some View {
         NavigationStack {
@@ -24,7 +25,7 @@ struct SettingsView: View {
                             }
                             .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                                 Button("Delete", role: .destructive) {
-                                    destinationToRemove = destination
+                                    requestRemoval(of: destination)
                                 }
                                 Button("Edit") {
                                     viewModel.beginEditing(destination)
@@ -106,6 +107,18 @@ struct SettingsView: View {
             } message: { destination in
                 Text("This removes \(destination.displayName) and its password from this iPhone. Existing history is kept.")
             }
+            .alert(
+                "Share Has Pending Transfers",
+                isPresented: Binding(
+                    get: { blockedDestinationRemoval != nil },
+                    set: { if !$0 { blockedDestinationRemoval = nil } }
+                ),
+                presenting: blockedDestinationRemoval
+            ) { _ in
+                Button("OK", role: .cancel) { blockedDestinationRemoval = nil }
+            } message: { destination in
+                Text("Finish, retry, or remove the pending items for \(destination.displayName) before deleting this share.")
+            }
             .onChange(of: viewModel.destinations) {
                 Task { await transferQueue.resume() }
             }
@@ -169,6 +182,9 @@ struct SettingsView: View {
                 Button("Retry") {
                     Task { await transferQueue.retry(transfer.id) }
                 }
+                Button("Remove from Queue", role: .destructive) {
+                    Task { await transferQueue.remove(transfer.id) }
+                }
             } else if transfer.status == .completed {
                 Button("Remove from History", role: .destructive) {
                     Task { await transferQueue.remove(transfer.id) }
@@ -202,6 +218,17 @@ struct SettingsView: View {
         case .uploading: "Sending"
         case .failed: "Failed"
         case .completed: "Uploaded"
+        }
+    }
+
+    private func requestRemoval(of destination: DestinationSummary) {
+        let hasPendingTransfers = transferQueue.transfers.contains {
+            $0.destinationID == destination.id && $0.status != .completed
+        }
+        if hasPendingTransfers {
+            blockedDestinationRemoval = destination
+        } else {
+            destinationToRemove = destination
         }
     }
 }

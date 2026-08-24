@@ -21,7 +21,7 @@
 
 - SMBDrop preserves the original bytes and filename for photos, Live Photo resources, RAW files, videos, and arbitrary shared files. It does not transcode HEIC or video.
 - Files land directly in the Destination subfolder. If the name already exists, SMBDrop appends ` (2)`, ` (3)`, and so on; it never overwrites an existing file.
-- Transfers run one item at a time in queue order. Each upload streams from a local file URL, writes to a unique `.smbdrop-partial` remote name, verifies the uploaded byte count, and then renames into place.
+- Transfers run one item at a time. The Main App resumes durable work in global queue order; a foreground Share Extension drains only the batch the user just submitted so it does not consume an unrelated backlog. Each upload streams from a local file URL, writes to a unique `.smbdrop-partial` remote name, verifies the uploaded byte count, and then renames into place.
 - Every Transfer is bound to a Destination ID and export batch before upload, so one Destination worker can never claim another share's files. Existing single-Destination queues are migrated to their original Destination.
 - Progress is presented for the whole export batch: aggregate bytes plus the current item number (`N of X`). Individual history rows show status without competing progress bars.
 - Every item is staged in a durable App Group outbox before upload. Interrupted uploads remain retryable; completed files are removed from local staging but retained as lightweight history.

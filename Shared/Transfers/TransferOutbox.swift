@@ -202,12 +202,20 @@ actor TransferOutbox {
 
     /// Gives queues created by the original single-destination app an explicit
     /// destination before any multi-share worker is allowed to claim them.
-    func assignUnassignedTransfers(to destinationID: UUID) throws {
+    func assignUnassignedTransfers(
+        to destinationID: UUID,
+        batchID: UUID = UUID()
+    ) throws {
         try withExclusiveLock {
             for storedTransfer in try transfersUnlocked()
-            where storedTransfer.destinationID == nil {
+            where storedTransfer.destinationID == nil || storedTransfer.batchID == nil {
                 var transfer = storedTransfer
-                transfer.destinationID = destinationID
+                if transfer.destinationID == nil {
+                    transfer.destinationID = destinationID
+                }
+                if transfer.batchID == nil {
+                    transfer.batchID = batchID
+                }
                 transfer.updatedAt = now()
                 try write(transfer)
             }

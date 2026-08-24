@@ -66,6 +66,9 @@ if (!/enqueueFile/.test(shareController) || !/SMBTransferWorker/.test(shareContr
 if (!/Choose an SMB Share/.test(shareController) || !/TransferBatchProgress/.test(shareController)) {
   throw new Error("The share extension does not choose a destination and show aggregate progress.");
 }
+if (!/startUpload\(to: destination\)/.test(shareController) || /Send Items/.test(shareController)) {
+  throw new Error("Choosing a share does not start the extension upload immediately.");
+}
 if (!/uploadItem/.test(uploader) || !/moveItem/.test(uploader)) {
   throw new Error("The SMB uploader does not stream and publish staged files.");
 }

@@ -170,6 +170,7 @@ final class PhotoLibraryViewModel: NSObject, ObservableObject {
                 ?? resources.first(where: { $0.type == .fullSizePhoto }) {
                 selected.append(photo)
             }
+            selected.append(contentsOf: resources.filter { $0.type == .alternatePhoto })
             if asset.mediaSubtypes.contains(.photoLive),
                let pairedVideo = resources.first(where: { $0.type == .pairedVideo })
                 ?? resources.first(where: { $0.type == .fullSizePairedVideo }) {

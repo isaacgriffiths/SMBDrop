@@ -315,7 +315,8 @@ final class TransferOutboxTests: XCTestCase {
             destinationID: secondDestinationID
         )
 
-        let work = try XCTUnwrap(try await outbox.claimNext(for: secondDestinationID))
+        let claimed = try await outbox.claimNext(for: secondDestinationID)
+        let work = try XCTUnwrap(claimed)
 
         XCTAssertEqual(work.transfer.id, second.id)
         XCTAssertEqual(work.transfer.destinationID, secondDestinationID)
@@ -335,7 +336,9 @@ final class TransferOutboxTests: XCTestCase {
 
         try await outbox.assignUnassignedTransfers(to: destinationID)
 
-        let work = try XCTUnwrap(try await outbox.claimNext(for: destinationID))
+        let claimed = try await outbox.claimNext(for: destinationID)
+        let work = try XCTUnwrap(claimed)
         XCTAssertEqual(work.transfer.destinationID, destinationID)
+        XCTAssertNotNil(work.transfer.batchID)
     }
 }
