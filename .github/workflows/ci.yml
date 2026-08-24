@@ -31,6 +31,9 @@ jobs:
       - name: Check dynamic framework embedding configuration
         run: node scripts/check-framework-embedding.mjs
 
+      - name: Check shared transfer outbox target configuration
+        run: node scripts/check-shared-outbox.mjs
+
       - name: Resolve Swift packages
         run: |
           xcodebuild \

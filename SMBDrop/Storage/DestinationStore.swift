@@ -6,7 +6,7 @@ struct SavedDestination: Equatable, Sendable {
 }
 
 struct DestinationStore {
-    static let appGroup = "group.com.isaacgriffiths.smbdrop"
+    static let appGroup = SMBDropAppGroup.identifier
 
     private let defaults: UserDefaults
     private let passwordVault: any PasswordVault
