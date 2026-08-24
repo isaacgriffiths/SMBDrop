@@ -108,20 +108,54 @@ struct DestinationStore {
     }
 
     func remove(id: UUID) throws {
-        let remaining = try loadAll().filter { $0.id != id }
+        let current = try loadAll()
+        guard current.contains(where: { $0.id == id }) else { return }
+        let remaining = current.filter { $0.id != id }
+        let previousSummaries = try JSONEncoder().encode(current.map(\.summary))
+
+        // Removal uses the inverse ordering from save: publish the reduced
+        // metadata first, then remove its secret. A crash can leave an orphaned
+        // Keychain value, but can never leave a saved share with no password.
         if remaining.isEmpty {
-            try passwordVault.removePassword()
             defaults.removeObject(forKey: destinationsKey)
         } else {
-            try persist(remaining)
+            defaults.set(
+                try JSONEncoder().encode(remaining.map(\.summary)),
+                forKey: destinationsKey
+            )
+        }
+
+        do {
+            if remaining.isEmpty {
+                try passwordVault.removePassword()
+            } else {
+                try passwordVault.savePassword(try passwordPayload(for: remaining))
+            }
+        } catch {
+            // Keychain failures are recoverable within this process. Restore
+            // the authoritative metadata so the caller still sees the old list.
+            defaults.set(previousSummaries, forKey: destinationsKey)
+            throw error
         }
     }
 
     /// Compatibility convenience that removes every configured share.
     func remove() throws {
-        try passwordVault.removePassword()
+        let previousDestinations = defaults.data(forKey: destinationsKey)
+        let previousLegacyDestination = defaults.data(forKey: legacyDestinationKey)
         defaults.removeObject(forKey: destinationsKey)
         defaults.removeObject(forKey: legacyDestinationKey)
+        do {
+            try passwordVault.removePassword()
+        } catch {
+            if let previousDestinations {
+                defaults.set(previousDestinations, forKey: destinationsKey)
+            }
+            if let previousLegacyDestination {
+                defaults.set(previousLegacyDestination, forKey: legacyDestinationKey)
+            }
+            throw error
+        }
     }
 
     private func readPasswords(
@@ -146,18 +180,22 @@ struct DestinationStore {
 
     private func persist(_ destinations: [SavedDestination]) throws {
         let summaries = destinations.map(\.summary)
-        let passwords = Dictionary(
-            uniqueKeysWithValues: destinations.map { ($0.id.uuidString, $0.password) }
-        )
-        let passwordData = try JSONEncoder().encode(PasswordEnvelope(passwords: passwords))
-        guard let passwordPayload = String(data: passwordData, encoding: .utf8) else {
-            throw StorageError.passwordEncodingFailed
-        }
 
         // Store secrets first. A crash can leave an unused Keychain entry, but
         // can never expose a destination whose password was not committed.
-        try passwordVault.savePassword(passwordPayload)
+        try passwordVault.savePassword(try passwordPayload(for: destinations))
         defaults.set(try JSONEncoder().encode(summaries), forKey: destinationsKey)
+    }
+
+    private func passwordPayload(for destinations: [SavedDestination]) throws -> String {
+        let passwords = Dictionary(
+            uniqueKeysWithValues: destinations.map { ($0.id.uuidString, $0.password) }
+        )
+        let data = try JSONEncoder().encode(PasswordEnvelope(passwords: passwords))
+        guard let payload = String(data: data, encoding: .utf8) else {
+            throw StorageError.passwordEncodingFailed
+        }
+        return payload
     }
 
     private struct PasswordEnvelope: Codable {

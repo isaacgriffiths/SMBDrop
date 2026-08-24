@@ -43,19 +43,61 @@ final class TransferBatchProgressTests: XCTestCase {
         XCTAssertEqual(progress.countText, "2 of 3")
     }
 
+    func testCurrentItemNumberUsesTheActiveItemsPositionAfterAnEarlierFailure() {
+        let batchID = UUID()
+        let destinationID = UUID()
+        let startDate = Date()
+        let transfers = [
+            transfer(
+                filename: "failed.jpg",
+                bytes: 100,
+                status: .failed,
+                bytesTransferred: 50,
+                destinationID: destinationID,
+                batchID: batchID,
+                createdAt: startDate
+            ),
+            transfer(
+                filename: "uploading.mov",
+                bytes: 300,
+                status: .uploading,
+                bytesTransferred: 100,
+                destinationID: destinationID,
+                batchID: batchID,
+                createdAt: startDate.addingTimeInterval(1)
+            ),
+            transfer(
+                filename: "queued.pdf",
+                bytes: 100,
+                status: .queued,
+                bytesTransferred: 0,
+                destinationID: destinationID,
+                batchID: batchID,
+                createdAt: startDate.addingTimeInterval(2)
+            ),
+        ]
+
+        let progress = TransferBatchProgress(transfers: transfers)
+
+        XCTAssertEqual(progress.currentFilename, "uploading.mov")
+        XCTAssertEqual(progress.currentItemNumber, 2)
+        XCTAssertEqual(progress.countText, "2 of 3")
+    }
+
     private func transfer(
         filename: String,
         bytes: Int64,
         status: Transfer.Status,
         bytesTransferred: Int64,
         destinationID: UUID,
-        batchID: UUID
+        batchID: UUID,
+        createdAt: Date = Date()
     ) -> Transfer {
         Transfer(
             id: UUID(),
             filename: filename,
             byteCount: bytes,
-            createdAt: Date(),
+            createdAt: createdAt,
             sourceCreationDate: nil,
             sourceModificationDate: Date(),
             destinationID: destinationID,

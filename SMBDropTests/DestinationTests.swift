@@ -74,6 +74,107 @@ final class DestinationTests: XCTestCase {
         XCTAssertEqual(try store.loadAll(), [second])
     }
 
+    func testRemovingOneDestinationPublishesMetadataBeforeDroppingItsPassword() throws {
+        let suiteName = "SMBDropTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let vault = MemoryPasswordVault()
+        let store = DestinationStore(defaults: defaults, passwordVault: vault)
+        let first = try store.save(
+            destination: Destination(
+                host: "one.local",
+                share: "Photos",
+                subfolder: "",
+                username: "one"
+            ),
+            password: "first-password"
+        )
+        let second = try store.save(
+            destination: Destination(
+                host: "two.local",
+                share: "Files",
+                subfolder: "",
+                username: "two"
+            ),
+            password: "second-password"
+        )
+        var destinationIDsAtPasswordCleanup: [UUID] = []
+        vault.beforeSave = {
+            let data = try XCTUnwrap(defaults.data(forKey: "savedDestinations.v2"))
+            destinationIDsAtPasswordCleanup = try JSONDecoder()
+                .decode([DestinationSummary].self, from: data)
+                .map(\.id)
+        }
+
+        try store.remove(id: first.id)
+
+        XCTAssertEqual(destinationIDsAtPasswordCleanup, [second.id])
+        XCTAssertEqual(try store.loadAll(), [second])
+    }
+
+    func testRemovingLastDestinationClearsMetadataBeforeThePassword() throws {
+        let suiteName = "SMBDropTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let vault = MemoryPasswordVault()
+        let store = DestinationStore(defaults: defaults, passwordVault: vault)
+        let saved = try store.save(
+            destination: Destination(
+                host: "nas.local",
+                share: "Photos",
+                subfolder: "",
+                username: "isaac"
+            ),
+            password: "password"
+        )
+        var metadataWasRemovedBeforePassword = false
+        vault.beforeRemove = {
+            metadataWasRemovedBeforePassword = defaults.data(
+                forKey: "savedDestinations.v2"
+            ) == nil
+        }
+
+        try store.remove(id: saved.id)
+
+        XCTAssertTrue(metadataWasRemovedBeforePassword)
+        XCTAssertTrue(try store.loadAll().isEmpty)
+    }
+
+    func testRemovalRollsBackMetadataWhenPasswordCleanupFails() throws {
+        let suiteName = "SMBDropTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let vault = MemoryPasswordVault()
+        let store = DestinationStore(defaults: defaults, passwordVault: vault)
+        let first = try store.save(
+            destination: Destination(
+                host: "one.local",
+                share: "Photos",
+                subfolder: "",
+                username: "one"
+            ),
+            password: "first-password"
+        )
+        let second = try store.save(
+            destination: Destination(
+                host: "two.local",
+                share: "Files",
+                subfolder: "",
+                username: "two"
+            ),
+            password: "second-password"
+        )
+        vault.beforeSave = { throw PasswordVaultFixtureError.cleanupFailed }
+
+        XCTAssertThrowsError(try store.remove(id: first.id))
+        vault.beforeSave = nil
+
+        XCTAssertEqual(try store.loadAll(), [first, second])
+    }
+
     func testLegacySingleDestinationMigratesWithoutLosingItsPassword() throws {
         let suiteName = "SMBDropTests.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
@@ -157,16 +258,24 @@ final class DestinationTests: XCTestCase {
 
 private final class MemoryPasswordVault: PasswordVault {
     private var password: String?
+    var beforeSave: (() throws -> Void)?
+    var beforeRemove: (() throws -> Void)?
 
     func readPassword() throws -> String? {
         password
     }
 
     func savePassword(_ password: String) throws {
+        try beforeSave?()
         self.password = password
     }
 
     func removePassword() throws {
+        try beforeRemove?()
         password = nil
     }
+}
+
+private enum PasswordVaultFixtureError: Error {
+    case cleanupFailed
 }

@@ -34,7 +34,7 @@ if (!/LazyVGrid/.test(photosView) || !/selectedIDs/.test(photosView)) {
   throw new Error("The Photos tab is not a selectable photo-library grid.");
 }
 if (!/fileImporter/.test(filesView) || !/allowsMultipleSelection: true/.test(filesView)) {
-  throw new Error("The Files tab does not use the native multi-select document browser.");
+  throw new Error("The Files tab does not use the native multi-select document picker.");
 }
 if (!/Add SMB Share/.test(settingsView) || !/ForEach\(viewModel\.destinations\)/.test(settingsView)) {
   throw new Error("Settings does not list and add multiple SMB shares.");

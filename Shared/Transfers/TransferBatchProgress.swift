@@ -19,16 +19,20 @@ struct TransferBatchProgress: Equatable, Sendable {
         totalCount = ordered.count
         completedCount = ordered.filter { $0.status == .completed }.count
         failedCount = ordered.filter { $0.status == .failed }.count
-        currentFilename = ordered.first(where: { $0.status == .uploading })?.filename
-            ?? ordered.first(where: { $0.status == .queued })?.filename
+        let activeTransfer = ordered.first(where: { $0.status == .uploading })
+            ?? ordered.first(where: { $0.status == .queued })
+        currentFilename = activeTransfer?.filename
             ?? ordered.first(where: { $0.status == .failed })?.filename
 
         if ordered.isEmpty {
             currentItemNumber = 0
+        } else if let activeTransfer,
+                  let activeIndex = ordered.firstIndex(where: { $0.id == activeTransfer.id }) {
+            currentItemNumber = activeIndex + 1
         } else if completedCount == ordered.count {
             currentItemNumber = ordered.count
         } else {
-            currentItemNumber = min(ordered.count, completedCount + 1)
+            currentItemNumber = min(ordered.count, completedCount + failedCount)
         }
 
         totalBytes = ordered.reduce(0) { $0 + max(0, $1.byteCount) }
