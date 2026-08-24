@@ -64,6 +64,17 @@ final class DestinationTests: XCTestCase {
         ) { error in
             XCTAssertEqual(error as? Destination.ValidationError, .invalidSubfolder)
         }
+
+        XCTAssertThrowsError(
+            try Destination(
+                host: "nas.local:1445",
+                share: "Photos",
+                subfolder: "",
+                username: "isaac"
+            )
+        ) { error in
+            XCTAssertEqual(error as? Destination.ValidationError, .invalidHost)
+        }
     }
 }
 
