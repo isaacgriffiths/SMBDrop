@@ -156,6 +156,44 @@ actor TransferOutbox {
         }
     }
 
+    func fail(_ work: TransferWork, message: String) throws -> Transfer {
+        try withExclusiveLock {
+            var transfer = try transferUnlocked(id: work.transfer.id)
+            try requireCurrentClaim(work)
+            guard transfer.status == .uploading else {
+                throw TransferOutboxError.invalidState
+            }
+
+            transfer.status = .failed
+            transfer.updatedAt = now()
+            transfer.errorMessage = message
+            try write(transfer)
+            try removeClaim(for: transfer.id)
+            return transfer
+        }
+    }
+
+    func retry(_ id: UUID) throws -> Transfer {
+        try withExclusiveLock {
+            var transfer = try transferUnlocked(id: id)
+            guard transfer.status == .failed else {
+                throw TransferOutboxError.invalidState
+            }
+            guard fileManager.fileExists(atPath: payloadURL(for: id).path) else {
+                throw TransferOutboxError.payloadMissing
+            }
+
+            transfer.status = .queued
+            transfer.updatedAt = now()
+            transfer.bytesTransferred = 0
+            transfer.remoteFilename = nil
+            transfer.errorMessage = nil
+            try removeClaim(for: id)
+            try write(transfer)
+            return transfer
+        }
+    }
+
     private func transfersUnlocked() throws -> [Transfer] {
         guard fileManager.fileExists(atPath: rootURL.path) else { return [] }
         return try fileManager.contentsOfDirectory(
@@ -175,6 +213,13 @@ actor TransferOutbox {
             }
             return $0.createdAt < $1.createdAt
         }
+    }
+
+    private func transferUnlocked(id: UUID) throws -> Transfer {
+        guard let transfer = try transfersUnlocked().first(where: { $0.id == id }) else {
+            throw TransferOutboxError.transferNotFound
+        }
+        return transfer
     }
 
     private func canonicalFilename(_ value: String) throws -> String {
@@ -222,6 +267,12 @@ actor TransferOutbox {
         try fileManager.removeItem(at: url)
     }
 
+    private func requireCurrentClaim(_ work: TransferWork) throws {
+        guard try readClaim(for: work.transfer.id)?.id == work.claimID else {
+            throw TransferOutboxError.claimNoLongerValid
+        }
+    }
+
     private func withExclusiveLock<Result>(_ operation: () throws -> Result) throws -> Result {
         try fileManager.createDirectory(at: rootURL, withIntermediateDirectories: true)
         let lockURL = rootURL.appendingPathComponent(".outbox.lock", isDirectory: false)
@@ -252,9 +303,12 @@ actor TransferOutbox {
 enum TransferOutboxError: LocalizedError {
     case appGroupUnavailable
     case invalidFilename
+    case invalidState
     case payloadMissing
     case sourceIsNotAFile
     case storageLockUnavailable
+    case claimNoLongerValid
+    case transferNotFound
 
     var errorDescription: String? {
         switch self {
@@ -262,12 +316,18 @@ enum TransferOutboxError: LocalizedError {
             "SMBDrop could not open its shared transfer storage."
         case .invalidFilename:
             "That file does not have a valid name."
+        case .invalidState:
+            "That transfer cannot be changed from its current state."
         case .payloadMissing:
             "The staged file is missing. Add it to the queue again."
         case .sourceIsNotAFile:
             "Only files can be added to the transfer queue."
         case .storageLockUnavailable:
             "SMBDrop could not safely update its shared transfer queue."
+        case .claimNoLongerValid:
+            "Another SMBDrop process has taken over this transfer."
+        case .transferNotFound:
+            "That transfer is no longer in the queue."
         }
     }
 }
