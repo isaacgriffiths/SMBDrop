@@ -62,7 +62,10 @@ if (!/ForEach\(removableTransfers\)/.test(transferActivityView)
 if (!/BGContinuedProcessingTaskRequest/.test(transferQueueViewModel)
     || !/task\.progress/.test(transferQueueViewModel)
     || !/setTaskCompleted/.test(transferQueueViewModel)
-    || !/beginBackgroundTask/.test(transferQueueViewModel)) {
+    || !/beginBackgroundTask/.test(transferQueueViewModel)
+    || !/submitTaskRequest/.test(transferQueueViewModel)
+    || !/strategy = \.queue/.test(transferQueueViewModel)
+    || !/TransferDrainLifetime/.test(transferQueueViewModel)) {
   throw new Error("Main-app transfers do not continue with system progress after backgrounding.");
 }
 if (!/startUserInitiatedTransfer/.test(photosView + photoLibraryViewModel)
@@ -70,7 +73,7 @@ if (!/startUserInitiatedTransfer/.test(photosView + photoLibraryViewModel)
   throw new Error("Photo and file exports do not start a user-initiated continued task.");
 }
 if (!/BGTaskSchedulerPermittedIdentifiers/.test(appInfo)
-    || !/com\.isaacgriffiths\.smbdrop\.transfer/.test(appInfo)) {
+    || !/com\.isaacgriffiths\.smbdrop\.transfer\.\*/.test(appInfo)) {
   throw new Error("The app does not permit its continued transfer task identifier.");
 }
 if (!/loadAll\(\)/.test(destinationStore) || !/savedDestinations\.v2/.test(destinationStore)) {
@@ -80,7 +83,8 @@ if (!/destinationID/.test(outbox) || !/batchID/.test(outbox) || !/claimNext\(/.t
   throw new Error("Queued transfers are not bound to a destination and batch.");
 }
 if (!/requestRemoval/.test(outbox) || !/TransferRemovalResult/.test(outbox)
-    || !/isRemovalRequested/.test(outbox) || !/removeClaimed/.test(outbox)) {
+    || !/isRemovalRequested/.test(outbox) || !/removeClaimed/.test(outbox)
+    || !/beginPublishing/.test(outbox) || !/case tooLate/.test(outbox)) {
   throw new Error("The durable outbox cannot safely remove an item from the current transfer.");
 }
 if (/destinationID: UUID\? = nil/.test(outbox) || /batchID: UUID\? = nil/.test(outbox)) {

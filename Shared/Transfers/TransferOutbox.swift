@@ -39,6 +39,7 @@ struct TransferWork: Sendable {
 enum TransferRemovalResult: Equatable, Sendable {
     case removed
     case cancellationRequested
+    case tooLate
 }
 
 actor TransferOutbox {
@@ -171,10 +172,12 @@ actor TransferOutbox {
                     if let existingClaim {
                         guard existingClaim.expiresAt <= currentDate else { continue }
                         try removeClaim(for: transfer.id)
+                        try removePublishingMarker(for: transfer.id)
                     }
                 case .uploading:
                     guard (existingClaim?.expiresAt ?? .distantPast) <= currentDate else { continue }
                     try removeClaim(for: transfer.id)
+                    try removePublishingMarker(for: transfer.id)
                 case .failed, .completed:
                     continue
                 }
@@ -294,6 +297,7 @@ actor TransferOutbox {
             transfer.errorMessage = message
             try write(transfer)
             try removeClaim(for: transfer.id)
+            try removePublishingMarker(for: transfer.id)
             return transfer
         }
     }
@@ -332,6 +336,9 @@ actor TransferOutbox {
             guard transfer.status == .uploading else {
                 throw TransferOutboxError.invalidState
             }
+            guard fileManager.fileExists(atPath: publishingMarkerURL(for: transfer.id).path) else {
+                throw TransferOutboxError.invalidState
+            }
 
             transfer.status = .completed
             transfer.updatedAt = now()
@@ -346,7 +353,26 @@ actor TransferOutbox {
             }
             try removeClaim(for: transfer.id)
             try removeRemovalRequest(for: transfer.id)
+            try removePublishingMarker(for: transfer.id)
             return transfer
+        }
+    }
+
+    /// Atomically reserves the final SMB rename. A removal request that wins
+    /// this lock prevents publication; one arriving afterward gets `.tooLate`
+    /// instead of falsely claiming that the completed upload was cancelled.
+    func beginPublishing(_ work: TransferWork) throws -> Bool {
+        try withExclusiveLock {
+            let transfer = try transferUnlocked(id: work.transfer.id)
+            try requireCurrentClaim(work)
+            guard transfer.status == .uploading else {
+                throw TransferOutboxError.invalidState
+            }
+            guard !fileManager.fileExists(atPath: removalRequestURL(for: transfer.id).path) else {
+                return false
+            }
+            try Data().write(to: publishingMarkerURL(for: transfer.id), options: .atomic)
+            return true
         }
     }
 
@@ -367,6 +393,7 @@ actor TransferOutbox {
             transfer.errorMessage = nil
             try removeClaim(for: id)
             try removeRemovalRequest(for: id)
+            try removePublishingMarker(for: id)
             try write(transfer)
             return transfer
         }
@@ -382,6 +409,9 @@ actor TransferOutbox {
         try withExclusiveLock {
             let transfer = try transferUnlocked(id: id)
             if transfer.status == .uploading {
+                guard !fileManager.fileExists(atPath: publishingMarkerURL(for: id).path) else {
+                    return .tooLate
+                }
                 try Data().write(to: removalRequestURL(for: id), options: .atomic)
                 return .cancellationRequested
             } else {
@@ -416,6 +446,7 @@ actor TransferOutbox {
             transfer.errorMessage = nil
             try write(transfer)
             try removeClaim(for: transfer.id)
+            try removePublishingMarker(for: transfer.id)
             return transfer
         }
     }
@@ -489,6 +520,13 @@ actor TransferOutbox {
         )
     }
 
+    private func publishingMarkerURL(for id: UUID) -> URL {
+        transferDirectoryURL(for: id).appendingPathComponent(
+            "publishing",
+            isDirectory: false
+        )
+    }
+
     private var retiredDestinationsURL: URL {
         rootURL.appendingPathComponent(".retired-destinations.json", isDirectory: false)
     }
@@ -544,6 +582,12 @@ actor TransferOutbox {
 
     private func removeRemovalRequest(for id: UUID) throws {
         let url = removalRequestURL(for: id)
+        guard fileManager.fileExists(atPath: url.path) else { return }
+        try fileManager.removeItem(at: url)
+    }
+
+    private func removePublishingMarker(for id: UUID) throws {
+        let url = publishingMarkerURL(for: id)
         guard fileManager.fileExists(atPath: url.path) else { return }
         try fileManager.removeItem(at: url)
     }

@@ -194,6 +194,8 @@ final class TransferOutboxTests: XCTestCase {
         )
         let claim = try await outbox.claimNext(for: destinationID)
         let work = try XCTUnwrap(claim)
+        let didBeginPublishing = try await outbox.beginPublishing(work)
+        XCTAssertTrue(didBeginPublishing)
         let completed = try await outbox.complete(
             work,
             remoteFilename: "IMG_0001 (2).HEIC"
@@ -262,7 +264,8 @@ final class TransferOutboxTests: XCTestCase {
         let result = try await outbox.requestRemoval(staged.id)
 
         XCTAssertEqual(result, .removed)
-        XCTAssertTrue(try await outbox.transfers().isEmpty)
+        let remainingTransfers = try await outbox.transfers()
+        XCTAssertTrue(remainingTransfers.isEmpty)
     }
 
     func testRequestingRemovalOfUploadingTransferIsHonoredByItsOwner() async throws {
@@ -289,7 +292,37 @@ final class TransferOutboxTests: XCTestCase {
         XCTAssertEqual(result, .cancellationRequested)
         XCTAssertTrue(work.isRemovalRequested)
         try await owner.removeClaimed(work)
-        XCTAssertTrue(try await requester.transfers().isEmpty)
+        let remainingTransfers = try await requester.transfers()
+        XCTAssertTrue(remainingTransfers.isEmpty)
+    }
+
+    func testRemovalCannotClaimCancellationAfterPublishingBegins() async throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("SMBDropTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        let sourceURL = rootURL.appendingPathComponent("publishing.mov")
+        try Data("publishing video".utf8).write(to: sourceURL)
+        let outboxURL = rootURL.appendingPathComponent("Outbox", isDirectory: true)
+        let owner = TransferOutbox(rootURL: outboxURL)
+        let staged = try await owner.enqueueFile(
+            at: sourceURL,
+            filename: "publishing.mov",
+            destinationID: destinationID,
+            batchID: batchID
+        )
+        let work = try XCTUnwrap(try await owner.claimNext(for: destinationID))
+        let requester = TransferOutbox(rootURL: outboxURL)
+
+        let didBeginPublishing = try await owner.beginPublishing(work)
+        XCTAssertTrue(didBeginPublishing)
+        let result = try await requester.requestRemoval(staged.id)
+
+        XCTAssertEqual(result, .tooLate)
+        XCTAssertFalse(work.isRemovalRequested)
+        let completed = try await owner.complete(work, remoteFilename: staged.filename)
+        XCTAssertEqual(completed.status, .completed)
     }
 
     func testReleasingClaimedTransferMakesItQueuedAndClaimableAgain() async throws {

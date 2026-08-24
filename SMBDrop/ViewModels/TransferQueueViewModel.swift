@@ -5,7 +5,7 @@ import UIKit
 
 @MainActor
 final class TransferQueueViewModel: ObservableObject {
-    private static let continuedTaskIdentifier = "com.isaacgriffiths.smbdrop.transfer"
+    private static let continuedTaskIdentifierPrefix = "com.isaacgriffiths.smbdrop.transfer"
 
     @Published private(set) var transfers: [Transfer] = []
     @Published private(set) var isDraining = false
@@ -18,7 +18,7 @@ final class TransferQueueViewModel: ObservableObject {
     private let worker: SMBTransferWorker
     private let outboxFactory: () throws -> TransferOutbox
     private var resumeRequested = false
-    private var isContinuedTaskRegistered = false
+    private var activeDrain: TransferDrainLifetime?
     private var isContinuedTaskRunning = false
     private var reportContinuedProgress: ((TransferBatchProgress) -> Void)?
 
@@ -68,7 +68,11 @@ final class TransferQueueViewModel: ObservableObject {
     }
 
     func startUserInitiatedTransfer() async {
-        if #available(iOS 26.0, *), submitContinuedProcessingTask() {
+        if isContinuedTaskRunning {
+            await resume()
+            return
+        }
+        if #available(iOS 26.0, *), await submitContinuedProcessingTask() {
             return
         }
 
@@ -111,10 +115,26 @@ final class TransferQueueViewModel: ObservableObject {
     }
 
     func resume() async {
-        guard !isDraining else {
+        if let activeDrain {
             resumeRequested = true
+            await waitForDrain(activeDrain)
             return
         }
+
+        let lifetime = TransferDrainLifetime()
+        activeDrain = lifetime
+        isDraining = true
+        lifetime.task = Task { @MainActor [self, lifetime] in
+            repeat {
+                resumeRequested = false
+                await performDrain()
+            } while resumeRequested && !Task.isCancelled
+            finishDrain(lifetime)
+        }
+        await waitForDrain(lifetime)
+    }
+
+    private func performDrain() async {
         do {
             let outbox = try outboxFactory()
             let destinations = try destinationStore.loadAll()
@@ -151,15 +171,6 @@ final class TransferQueueViewModel: ObservableObject {
                 message = "A queued item belongs to an SMB share that is no longer saved."
             } else {
                 message = nil
-            }
-
-            isDraining = true
-            defer {
-                isDraining = false
-                if resumeRequested {
-                    resumeRequested = false
-                    Task { await self.resume() }
-                }
             }
 
             let destinationsByID = Dictionary(
@@ -200,8 +211,31 @@ final class TransferQueueViewModel: ObservableObject {
             }
         } catch {
             message = error.localizedDescription
-            isDraining = false
         }
+    }
+
+    private func waitForDrain(_ lifetime: TransferDrainLifetime) async {
+        await withCheckedContinuation { continuation in
+            guard activeDrain?.id == lifetime.id else {
+                continuation.resume()
+                return
+            }
+            lifetime.waiters.append(continuation)
+        }
+    }
+
+    private func finishDrain(_ lifetime: TransferDrainLifetime) {
+        guard activeDrain?.id == lifetime.id else { return }
+        activeDrain = nil
+        isDraining = false
+        lifetime.task = nil
+        let waiters = lifetime.waiters
+        lifetime.waiters.removeAll()
+        waiters.forEach { $0.resume() }
+    }
+
+    private func cancelActiveDrain() {
+        activeDrain?.task?.cancel()
     }
 
     func retry(_ id: UUID) async {
@@ -226,6 +260,9 @@ final class TransferQueueViewModel: ObservableObject {
             prunePendingRemovalIDs()
             if result == .cancellationRequested {
                 await resume()
+            } else if result == .tooLate {
+                pendingRemovalIDs.remove(id)
+                message = "That item was already being published. Remove it from history after it finishes."
             }
         } catch {
             pendingRemovalIDs.remove(id)
@@ -254,40 +291,41 @@ final class TransferQueueViewModel: ObservableObject {
     }
 
     @available(iOS 26.0, *)
-    private func submitContinuedProcessingTask() -> Bool {
-        if isContinuedTaskRunning {
-            Task { await self.resume() }
-            return true
-        }
-
-        if !isContinuedTaskRegistered {
-            isContinuedTaskRegistered = BGTaskScheduler.shared.register(
-                forTaskWithIdentifier: Self.continuedTaskIdentifier,
-                using: nil
-            ) { [weak self] submittedTask in
+    private func submitContinuedProcessingTask() async -> Bool {
+        let identifier = "\(Self.continuedTaskIdentifierPrefix).\(UUID().uuidString)"
+        let registered = BGTaskScheduler.shared.register(
+            forTaskWithIdentifier: identifier,
+            using: DispatchQueue.main
+        ) { [weak self] submittedTask in
+            MainActor.assumeIsolated {
                 guard let task = submittedTask as? BGContinuedProcessingTask else {
                     submittedTask.setTaskCompleted(success: false)
                     return
                 }
-                Task { @MainActor [weak self] in
+                let context = ContinuedTransferContext(task: task)
+                guard let self else {
+                    context.task.setTaskCompleted(success: false)
+                    return
+                }
+                Task { @MainActor [weak self, context] in
                     guard let self else {
-                        task.setTaskCompleted(success: false)
+                        context.task.setTaskCompleted(success: false)
                         return
                     }
-                    await self.runContinuedProcessingTask(task)
+                    await self.runContinuedProcessingTask(context)
                 }
             }
         }
-        guard isContinuedTaskRegistered else { return false }
+        guard registered else { return false }
 
         let request = BGContinuedProcessingTaskRequest(
-            identifier: Self.continuedTaskIdentifier,
+            identifier: identifier,
             title: "Uploading to SMB",
             subtitle: "Preparing transfer…"
         )
-        request.strategy = .fail
+        request.strategy = .queue
         do {
-            try BGTaskScheduler.shared.submit(request)
+            try await BGTaskScheduler.shared.submitTaskRequest(request)
             return true
         } catch {
             return false
@@ -295,7 +333,8 @@ final class TransferQueueViewModel: ObservableObject {
     }
 
     @available(iOS 26.0, *)
-    private func runContinuedProcessingTask(_ task: BGContinuedProcessingTask) async {
+    private func runContinuedProcessingTask(_ context: ContinuedTransferContext) async {
+        let task = context.task
         isContinuedTaskRunning = true
         reportContinuedProgress = { progress in
             let totalUnits = max(1, progress.totalBytes)
@@ -312,13 +351,13 @@ final class TransferQueueViewModel: ObservableObject {
         }
         reportProgressIfNeeded()
 
-        let operation = Task { @MainActor [weak self] in
-            await self?.resume()
+        task.expirationHandler = { [weak self, context] in
+            Task { @MainActor [weak self, context] in
+                context.wasExpired = true
+                self?.cancelActiveDrain()
+            }
         }
-        task.expirationHandler = {
-            operation.cancel()
-        }
-        await operation.value
+        await resume()
 
         let trackedTransfers = activeTransfers
         let hasUnfinished = trackedTransfers.contains {
@@ -326,7 +365,7 @@ final class TransferQueueViewModel: ObservableObject {
         }
         let hasFailure = trackedTransfers.contains { $0.status == .failed }
         task.setTaskCompleted(
-            success: !operation.isCancelled && !hasUnfinished && !hasFailure
+            success: !context.wasExpired && !hasUnfinished && !hasFailure
         )
         reportContinuedProgress = nil
         isContinuedTaskRunning = false
@@ -345,6 +384,24 @@ final class TransferQueueViewModel: ObservableObject {
             transfers.sort { $0.createdAt < $1.createdAt }
         }
         reportProgressIfNeeded()
+    }
+}
+
+@MainActor
+private final class TransferDrainLifetime {
+    let id = UUID()
+    var task: Task<Void, Never>?
+    var waiters: [CheckedContinuation<Void, Never>] = []
+}
+
+@available(iOS 26.0, *)
+@MainActor
+private final class ContinuedTransferContext {
+    let task: BGContinuedProcessingTask
+    var wasExpired = false
+
+    init(task: BGContinuedProcessingTask) {
+        self.task = task
     }
 }
 

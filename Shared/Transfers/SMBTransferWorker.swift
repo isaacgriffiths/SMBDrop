@@ -25,7 +25,8 @@ protocol SMBTransferUploading {
         _ work: TransferWork,
         to destination: Destination,
         password: String,
-        progress: @escaping @Sendable (Int64) -> Void
+        progress: @escaping @Sendable (Int64) -> Void,
+        shouldPublish: @escaping @Sendable () async throws -> Bool
     ) async throws -> String
 }
 
@@ -47,7 +48,8 @@ struct SMBTransferUploader: SMBTransferUploading {
         _ work: TransferWork,
         to destination: Destination,
         password: String,
-        progress: @escaping @Sendable (Int64) -> Void
+        progress: @escaping @Sendable (Int64) -> Void,
+        shouldPublish: @escaping @Sendable () async throws -> Bool
     ) async throws -> String {
         guard let session = sessionFactory(destination, password) else {
             throw SMBConnectionError.invalidServer
@@ -101,6 +103,10 @@ struct SMBTransferUploader: SMBTransferUploading {
             guard !work.isRemovalRequested else {
                 throw TransferUploadError.cancelled
             }
+            guard try await shouldPublish() else {
+                throw TransferUploadError.cancelled
+            }
+            guard !Task.isCancelled else { throw CancellationError() }
             try await session.moveItem(atPath: temporaryPath, toPath: finalPath)
             partialPath = nil
             try? await session.disconnectShare(gracefully: true)
@@ -221,10 +227,14 @@ struct SMBTransferWorker {
                     let remoteFilename = try await uploader.upload(
                         work,
                         to: destination,
-                        password: password
-                    ) { bytes in
-                        continuation.yield(bytes)
-                    }
+                        password: password,
+                        progress: { bytes in
+                            continuation.yield(bytes)
+                        },
+                        shouldPublish: {
+                            try await outbox.beginPublishing(work)
+                        }
+                    )
                     continuation.finish()
                     await progressTask.value
                     let transfer = try await outbox.complete(

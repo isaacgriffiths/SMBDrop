@@ -27,7 +27,8 @@ final class SMBTransferWorkerTests: XCTestCase {
             work,
             to: destination,
             password: "secret",
-            progress: { _ in }
+            progress: { _ in },
+            shouldPublish: { true }
         )
 
         XCTAssertEqual(remoteFilename, "clip.mov")
@@ -73,7 +74,8 @@ final class SMBTransferWorkerTests: XCTestCase {
                 work,
                 to: destination,
                 password: "secret",
-                progress: { _ in }
+                progress: { _ in },
+                shouldPublish: { true }
             )
             XCTFail("Expected an existing filename to stop the upload")
         } catch {
@@ -107,7 +109,8 @@ final class SMBTransferWorkerTests: XCTestCase {
                 work,
                 to: destination,
                 password: "secret",
-                progress: { _ in }
+                progress: { _ in },
+                shouldPublish: { true }
             )
             XCTFail("A removal request must stop before the partial file is published")
         } catch {
@@ -171,7 +174,8 @@ final class SMBTransferWorkerTests: XCTestCase {
 
         XCTAssertTrue(result.completed.isEmpty)
         XCTAssertNil(result.failed)
-        XCTAssertTrue(try await fixture.outbox.transfers().isEmpty)
+        let remainingTransfers = try await fixture.outbox.transfers()
+        XCTAssertTrue(remainingTransfers.isEmpty)
         XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.payloadPath(for: staged.id)))
     }
 }
@@ -295,9 +299,13 @@ private struct FakeTransferUploader: SMBTransferUploading {
         _ work: TransferWork,
         to destination: Destination,
         password: String,
-        progress: @escaping @Sendable (Int64) -> Void
+        progress: @escaping @Sendable (Int64) -> Void,
+        shouldPublish: @escaping @Sendable () async throws -> Bool
     ) async throws -> String {
         progress(work.transfer.byteCount)
+        guard try await shouldPublish() else {
+            throw TransferUploadError.cancelled
+        }
         return remoteFilename
     }
 }
@@ -309,7 +317,8 @@ private struct RemovalRequestingUploader: SMBTransferUploading {
         _ work: TransferWork,
         to destination: Destination,
         password: String,
-        progress: @escaping @Sendable (Int64) -> Void
+        progress: @escaping @Sendable (Int64) -> Void,
+        shouldPublish: @escaping @Sendable () async throws -> Bool
     ) async throws -> String {
         _ = try await outbox.requestRemoval(work.transfer.id)
         throw TransferUploadError.cancelled
