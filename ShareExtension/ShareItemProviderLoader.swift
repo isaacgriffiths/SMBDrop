@@ -1,53 +1,58 @@
 import Foundation
 import UniformTypeIdentifiers
 
-struct LoadedShareItem {
-    let temporaryURL: URL
-    let filename: String
-}
-
 struct ShareItemProviderLoader {
     func load(_ provider: NSItemProvider) async throws -> LoadedShareItem {
         guard let typeIdentifier = preferredTypeIdentifier(for: provider) else {
             throw ShareItemLoadingError.unsupportedItem
         }
 
-        return try await withCheckedThrowingContinuation { continuation in
-            provider.loadFileRepresentation(forTypeIdentifier: typeIdentifier) { url, error in
-                do {
-                    if let error { throw error }
-                    guard let url else { throw ShareItemLoadingError.fileUnavailable }
+        do {
+            return try await loadInPlace(
+                provider,
+                typeIdentifier: typeIdentifier
+            )
+        } catch {
+            return try await loadCopiedRepresentation(
+                provider,
+                typeIdentifier: typeIdentifier
+            )
+        }
+    }
 
-                    let filename = Self.filename(
-                        suggestedName: provider.suggestedName,
-                        sourceURL: url,
-                        typeIdentifier: typeIdentifier
-                    )
-                    let temporaryDirectory = FileManager.default.temporaryDirectory
-                        .appendingPathComponent(UUID().uuidString, isDirectory: true)
-                    try FileManager.default.createDirectory(
-                        at: temporaryDirectory,
-                        withIntermediateDirectories: false
-                    )
-                    let temporaryURL = temporaryDirectory.appendingPathComponent(
-                        filename,
-                        isDirectory: false
-                    )
-                    do {
-                        try FileManager.default.copyItem(at: url, to: temporaryURL)
-                        continuation.resume(
-                            returning: LoadedShareItem(
-                                temporaryURL: temporaryURL,
-                                filename: filename
-                            )
-                        )
-                    } catch {
-                        try? FileManager.default.removeItem(at: temporaryDirectory)
-                        throw error
-                    }
-                } catch {
-                    continuation.resume(throwing: error)
-                }
+    private func loadInPlace(
+        _ provider: NSItemProvider,
+        typeIdentifier: String
+    ) async throws -> LoadedShareItem {
+        return try await withCheckedThrowingContinuation { continuation in
+            provider.loadInPlaceFileRepresentation(forTypeIdentifier: typeIdentifier) {
+                url,
+                _,
+                error in
+                Self.finishLoading(
+                    sourceURL: url,
+                    error: error,
+                    suggestedName: provider.suggestedName,
+                    typeIdentifier: typeIdentifier,
+                    continuation: continuation
+                )
+            }
+        }
+    }
+
+    private func loadCopiedRepresentation(
+        _ provider: NSItemProvider,
+        typeIdentifier: String
+    ) async throws -> LoadedShareItem {
+        try await withCheckedThrowingContinuation { continuation in
+            provider.loadFileRepresentation(forTypeIdentifier: typeIdentifier) { url, error in
+                Self.finishLoading(
+                    sourceURL: url,
+                    error: error,
+                    suggestedName: provider.suggestedName,
+                    typeIdentifier: typeIdentifier,
+                    continuation: continuation
+                )
             }
         }
     }
@@ -65,25 +70,46 @@ struct ShareItemProviderLoader {
         return identifiers.first
     }
 
-    private static func filename(
+    private static func finishLoading(
+        sourceURL: URL?,
+        error: Error?,
         suggestedName: String?,
-        sourceURL: URL,
-        typeIdentifier: String
-    ) -> String {
-        var name = suggestedName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        if name.isEmpty || name == "." || name == ".." {
-            name = sourceURL.lastPathComponent
+        typeIdentifier: String,
+        continuation: CheckedContinuation<LoadedShareItem, Error>
+    ) {
+        if let error {
+            continuation.resume(throwing: error)
+            return
         }
-        name = URL(fileURLWithPath: name).lastPathComponent
+        guard let sourceURL else {
+            continuation.resume(throwing: ShareItemLoadingError.fileUnavailable)
+            return
+        }
 
-        if (name as NSString).pathExtension.isEmpty,
-           let fileExtension = UTType(typeIdentifier)?.preferredFilenameExtension {
-            name += ".\(fileExtension)"
+        let coordinator = NSFileCoordinator()
+        var coordinationError: NSError?
+        var result: Result<LoadedShareItem, Error>?
+        coordinator.coordinate(
+            readingItemAt: sourceURL,
+            options: .withoutChanges,
+            error: &coordinationError
+        ) { coordinatedURL in
+            result = Result {
+                try ShareItemFileStager.stage(
+                    sourceURL: coordinatedURL,
+                    suggestedName: suggestedName,
+                    typeIdentifier: typeIdentifier
+                )
+            }
         }
-        if name.isEmpty || name == "." || name == ".." {
-            name = "Shared Item"
+
+        if let result {
+            continuation.resume(with: result)
+        } else {
+            continuation.resume(
+                throwing: coordinationError ?? ShareItemLoadingError.fileUnavailable
+            )
         }
-        return name
     }
 }
 

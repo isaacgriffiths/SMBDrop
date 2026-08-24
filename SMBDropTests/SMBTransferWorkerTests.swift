@@ -3,11 +3,14 @@ import XCTest
 @testable import SMBDrop
 
 final class SMBTransferWorkerTests: XCTestCase {
-    func testUploaderStreamsToPartialVerifiesAndRenamesWithoutOverwriting() async throws {
+    func testUploaderPreservesNameAndDatesWhenPublishingAtomically() async throws {
         let fixture = try UploadFixture(filename: "clip.mov", bytes: Data("video bytes".utf8))
         defer { fixture.remove() }
         let work = try await fixture.claimedWork()
-        let session = FakeUploadSession(existingNames: ["clip.mov", "clip (2).mov"])
+        let sourceDates = try fixture.sourceURL.resourceValues(
+            forKeys: [.creationDateKey, .contentModificationDateKey]
+        )
+        let session = FakeUploadSession(existingNames: [])
         let fixedUUID = try XCTUnwrap(UUID(uuidString: "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE"))
         let uploader = SMBTransferUploader(
             sessionFactory: { _, _ in session },
@@ -27,15 +30,58 @@ final class SMBTransferWorkerTests: XCTestCase {
             progress: { _ in }
         )
 
-        XCTAssertEqual(remoteFilename, "clip (3).mov")
+        XCTAssertEqual(remoteFilename, "clip.mov")
+        XCTAssertEqual(work.transfer.sourceCreationDate, sourceDates.creationDate)
+        XCTAssertEqual(
+            work.transfer.sourceModificationDate,
+            sourceDates.contentModificationDate
+        )
         XCTAssertEqual(
             session.uploadedPath,
             "/video/.AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE.smbdrop-partial"
         )
         XCTAssertEqual(session.movedFromPath, session.uploadedPath)
-        XCTAssertEqual(session.movedToPath, "/video/clip (3).mov")
+        XCTAssertEqual(session.attributesPath, session.uploadedPath)
+        XCTAssertEqual(
+            session.writtenAttributes?[.creationDateKey] as? Date,
+            work.transfer.sourceCreationDate
+        )
+        XCTAssertEqual(
+            session.writtenAttributes?[.contentModificationDateKey] as? Date,
+            work.transfer.sourceModificationDate
+        )
+        XCTAssertEqual(session.movedToPath, "/video/clip.mov")
         XCTAssertEqual(session.uploadedBytes, Data("video bytes".utf8))
         XCTAssertEqual(session.disconnectModes, [true])
+    }
+
+    func testUploaderRejectsAnExistingNameInsteadOfChangingOrOverwritingIt() async throws {
+        let fixture = try UploadFixture(filename: "clip.mov", bytes: Data("video bytes".utf8))
+        defer { fixture.remove() }
+        let work = try await fixture.claimedWork()
+        let session = FakeUploadSession(existingNames: ["CLIP.MOV"])
+        let uploader = SMBTransferUploader(sessionFactory: { _, _ in session })
+        let destination = try Destination(
+            host: "192.168.1.122",
+            share: "share",
+            subfolder: "Video",
+            username: "isaac"
+        )
+
+        do {
+            _ = try await uploader.upload(
+                work,
+                to: destination,
+                password: "secret",
+                progress: { _ in }
+            )
+            XCTFail("Expected an existing filename to stop the upload")
+        } catch {
+            XCTAssertEqual(error as? TransferUploadError, .fileAlreadyExists("clip.mov"))
+        }
+
+        XCTAssertNil(session.uploadedPath)
+        XCTAssertEqual(session.disconnectModes, [false])
     }
 
     func testWorkerCompletesDurableTransferAndRemovesStagedPayload() async throws {
@@ -108,6 +154,8 @@ private final class FakeUploadSession: SMBUploadSession {
     var uploadedBytes: Data?
     var movedFromPath: String?
     var movedToPath: String?
+    var attributesPath: String?
+    var writtenAttributes: [URLResourceKey: Any]?
     var disconnectModes: [Bool] = []
     private let existingNames: [String]
 
@@ -133,6 +181,14 @@ private final class FakeUploadSession: SMBUploadSession {
 
     func attributesOfItem(atPath path: String) async throws -> [URLResourceKey: Any] {
         [.fileSizeKey: uploadedBytes?.count ?? 0]
+    }
+
+    func setAttributes(
+        _ attributes: [URLResourceKey: Any],
+        ofItemAtPath path: String
+    ) async throws {
+        attributesPath = path
+        writtenAttributes = attributes
     }
 
     func moveItem(atPath path: String, toPath: String) async throws {

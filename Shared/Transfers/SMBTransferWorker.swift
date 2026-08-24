@@ -11,6 +11,10 @@ protocol SMBUploadSession: AnyObject {
         progress: @escaping @Sendable (Int64) -> Bool
     ) async throws
     func attributesOfItem(atPath path: String) async throws -> [URLResourceKey: Any]
+    func setAttributes(
+        _ attributes: [URLResourceKey: Any],
+        ofItemAtPath path: String
+    ) async throws
     func moveItem(atPath path: String, toPath: String) async throws
     func removeFile(atPath path: String) async throws
     func disconnectShare(gracefully: Bool) async throws
@@ -55,10 +59,12 @@ struct SMBTransferUploader: SMBTransferUploading {
             try await connect(session, share: destination.share)
             let entries = try await session.contentsOfDirectory(atPath: destination.remotePath)
             let existingNames = Set(entries.compactMap { $0[.nameKey] as? String })
-            let remoteFilename = Self.uniqueFilename(
-                preferred: work.transfer.filename,
-                existingNames: existingNames
-            )
+            let remoteFilename = work.transfer.filename
+            guard !existingNames.contains(where: {
+                $0.caseInsensitiveCompare(remoteFilename) == .orderedSame
+            }) else {
+                throw TransferUploadError.fileAlreadyExists(remoteFilename)
+            }
             let finalPath = Self.remotePath(
                 folderPath: destination.remotePath,
                 filename: remoteFilename
@@ -77,6 +83,15 @@ struct SMBTransferUploader: SMBTransferUploading {
             guard Self.fileSize(in: attributes) == work.transfer.byteCount else {
                 throw TransferUploadError.sizeMismatch
             }
+            var sourceDates: [URLResourceKey: Any] = [:]
+            if let creationDate = work.transfer.sourceCreationDate {
+                sourceDates[.creationDateKey] = creationDate
+            }
+            guard let modificationDate = work.transfer.sourceModificationDate else {
+                throw TransferUploadError.sourceTimestampUnavailable
+            }
+            sourceDates[.contentModificationDateKey] = modificationDate
+            try await session.setAttributes(sourceDates, ofItemAtPath: temporaryPath)
             try await session.moveItem(atPath: temporaryPath, toPath: finalPath)
             partialPath = nil
             try? await session.disconnectShare(gracefully: true)
@@ -90,24 +105,6 @@ struct SMBTransferUploader: SMBTransferUploading {
                 throw error
             }
             throw SMBConnectionError.friendly(error)
-        }
-    }
-
-    static func uniqueFilename(preferred: String, existingNames: Set<String>) -> String {
-        let foldedNames = Set(existingNames.map { $0.lowercased() })
-        guard foldedNames.contains(preferred.lowercased()) else { return preferred }
-
-        let pathExtension = (preferred as NSString).pathExtension
-        let stem = (preferred as NSString).deletingPathExtension
-        var suffix = 2
-        while true {
-            let candidate = pathExtension.isEmpty
-                ? "\(stem) (\(suffix))"
-                : "\(stem) (\(suffix)).\(pathExtension)"
-            if !foldedNames.contains(candidate.lowercased()) {
-                return candidate
-            }
-            suffix += 1
         }
     }
 
@@ -225,11 +222,20 @@ struct SMBTransferWorker {
     }
 }
 
-enum TransferUploadError: LocalizedError {
+enum TransferUploadError: LocalizedError, Equatable {
     case sizeMismatch
+    case fileAlreadyExists(String)
+    case sourceTimestampUnavailable
 
     var errorDescription: String? {
-        "The server received a different file size, so SMBDrop kept the item queued instead of publishing a damaged file."
+        switch self {
+        case .sizeMismatch:
+            "The server received a different file size, so SMBDrop kept the item queued instead of publishing a damaged file."
+        case .fileAlreadyExists(let filename):
+            "A file named \(filename) already exists. SMBDrop kept the item queued instead of changing its name or overwriting it."
+        case .sourceTimestampUnavailable:
+            "The original file timestamp is unavailable. SMBDrop kept the item queued instead of replacing it with the upload time."
+        }
     }
 }
 
@@ -263,6 +269,13 @@ private final class AMSMB2UploadSession: SMBUploadSession {
 
     func attributesOfItem(atPath path: String) async throws -> [URLResourceKey: Any] {
         try await manager.attributesOfItem(atPath: path)
+    }
+
+    func setAttributes(
+        _ attributes: [URLResourceKey: Any],
+        ofItemAtPath path: String
+    ) async throws {
+        try await manager.setAttributes(attributes: attributes, ofItemAtPath: path)
     }
 
     func moveItem(atPath path: String, toPath: String) async throws {

@@ -174,6 +174,14 @@ struct ContentView: View {
                     Label(viewModel.folderBrowseDisplayPath, systemImage: "folder.fill")
                         .font(.subheadline.monospaced())
 
+                    if viewModel.connectionState == .testing {
+                        ProgressView("Verifying and savingâ€¦")
+                    } else if let message = viewModel.folderSelectionError {
+                        Label(message, systemImage: "exclamationmark.triangle.fill")
+                            .font(.subheadline)
+                            .foregroundStyle(.red)
+                    }
+
                     if viewModel.canBrowseToParentFolder {
                         Button {
                             Task { await viewModel.browseToParentFolder() }
@@ -226,11 +234,19 @@ struct ContentView: View {
                     }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Use Folder") {
-                        viewModel.selectBrowsedFolder()
-                        isShowingFolderBrowser = false
+                    Button("Use & Save") {
+                        Task {
+                            if await viewModel.useBrowsedFolder() {
+                                isShowingFolderBrowser = false
+                                await transferQueue.resume()
+                            }
+                        }
                     }
-                    .disabled(viewModel.isLoadingFolders || viewModel.folderBrowseError != nil)
+                    .disabled(
+                        viewModel.isLoadingFolders
+                            || viewModel.folderBrowseError != nil
+                            || viewModel.connectionState == .testing
+                    )
                 }
             }
         }

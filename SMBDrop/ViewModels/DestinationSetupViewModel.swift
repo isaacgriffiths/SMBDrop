@@ -84,6 +84,11 @@ final class DestinationSetupViewModel: ObservableObject {
         !folderBrowsePath.isEmpty && !isLoadingFolders
     }
 
+    var folderSelectionError: String? {
+        guard case .failure(let message) = connectionState else { return nil }
+        return message
+    }
+
     var savedPath: String {
         guard let destination = savedDestination else { return "" }
         return destination.subfolder.isEmpty
@@ -159,6 +164,8 @@ final class DestinationSetupViewModel: ObservableObject {
 
     func beginFolderBrowsing() async {
         guard canBrowseFolders else { return }
+        connectionState = .idle
+        verifiedForm = nil
         do {
             let destination = try currentForm.destination()
             await loadFolders(at: destination.subfolder, destination: destination)
@@ -187,10 +194,16 @@ final class DestinationSetupViewModel: ObservableObject {
         await loadFolders(at: components.joined(separator: "/"), destination: destination)
     }
 
-    func selectBrowsedFolder() {
-        subfolder = folderBrowsePath
+    func useBrowsedFolder() async -> Bool {
+        let selectedFolder = folderBrowsePath
+        subfolder = selectedFolder
         connectionState = .idle
         verifiedForm = nil
+        await testConnection()
+        guard canSave else { return false }
+        save()
+        return connectionState == .idle
+            && savedDestination?.subfolder == selectedFolder
     }
 
     func save() {

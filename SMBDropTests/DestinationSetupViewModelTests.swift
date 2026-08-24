@@ -87,8 +87,8 @@ final class DestinationSetupViewModelTests: XCTestCase {
 
     func testBrowseFoldersNavigatesAndSelectsARealSubfolder() async throws {
         let folderLister = FakeFolderLister(foldersByPath: [
-            "": [SMBFolder(name: "video", path: "video")],
-            "video": [SMBFolder(name: "phone", path: "video/phone")],
+            "": [SMBFolder(name: "Video", path: "Video")],
+            "Video": [SMBFolder(name: "phone", path: "Video/phone")],
         ])
         let viewModel = try makeViewModel(
             shareLister: FakeShareLister(shares: ["share"]),
@@ -100,14 +100,18 @@ final class DestinationSetupViewModelTests: XCTestCase {
         viewModel.password = "super-secret"
 
         await viewModel.beginFolderBrowsing()
-        XCTAssertEqual(viewModel.availableFolders.map(\.name), ["video"])
+        XCTAssertEqual(viewModel.availableFolders.map(\.name), ["Video"])
 
         await viewModel.browseIntoFolder(try XCTUnwrap(viewModel.availableFolders.first))
-        XCTAssertEqual(viewModel.folderBrowsePath, "video")
+        XCTAssertEqual(viewModel.folderBrowsePath, "Video")
         XCTAssertEqual(viewModel.availableFolders.map(\.name), ["phone"])
 
-        viewModel.selectBrowsedFolder()
-        XCTAssertEqual(viewModel.subfolder, "video")
+        let didSave = await viewModel.useBrowsedFolder()
+
+        XCTAssertTrue(didSave)
+        XCTAssertEqual(viewModel.subfolder, "Video")
+        XCTAssertEqual(viewModel.savedDestination?.subfolder, "Video")
+        XCTAssertFalse(viewModel.isShowingSetup)
         XCTAssertEqual(viewModel.connectionState, .idle)
     }
 

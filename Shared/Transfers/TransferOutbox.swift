@@ -13,6 +13,8 @@ struct Transfer: Codable, Equatable, Identifiable, Sendable {
     let filename: String
     let byteCount: Int64
     let createdAt: Date
+    let sourceCreationDate: Date?
+    let sourceModificationDate: Date?
     var updatedAt: Date
     var status: Status
     var bytesTransferred: Int64
@@ -69,9 +71,19 @@ actor TransferOutbox {
         moveSource: Bool = false
     ) throws -> Transfer {
         let filename = try canonicalFilename(filename)
-        let resourceValues = try sourceURL.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
+        let resourceValues = try sourceURL.resourceValues(
+            forKeys: [
+                .isRegularFileKey,
+                .fileSizeKey,
+                .creationDateKey,
+                .contentModificationDateKey,
+            ]
+        )
         guard resourceValues.isRegularFile == true else {
             throw TransferOutboxError.sourceIsNotAFile
+        }
+        guard let sourceModificationDate = resourceValues.contentModificationDate else {
+            throw TransferOutboxError.sourceTimestampUnavailable
         }
 
         return try withExclusiveLock {
@@ -81,6 +93,8 @@ actor TransferOutbox {
                 filename: filename,
                 byteCount: Int64(resourceValues.fileSize ?? 0),
                 createdAt: currentDate,
+                sourceCreationDate: resourceValues.creationDate,
+                sourceModificationDate: sourceModificationDate,
                 updatedAt: currentDate,
                 status: .queued,
                 bytesTransferred: 0,
@@ -391,6 +405,7 @@ enum TransferOutboxError: LocalizedError {
     case invalidState
     case payloadMissing
     case sourceIsNotAFile
+    case sourceTimestampUnavailable
     case storageLockUnavailable
     case claimNoLongerValid
     case transferNotFound
@@ -409,6 +424,8 @@ enum TransferOutboxError: LocalizedError {
             "The staged file is missing. Add it to the queue again."
         case .sourceIsNotAFile:
             "Only files can be added to the transfer queue."
+        case .sourceTimestampUnavailable:
+            "That file does not include an original modification date, so SMBDrop did not upload it with a replacement timestamp."
         case .storageLockUnavailable:
             "SMBDrop could not safely update its shared transfer queue."
         case .claimNoLongerValid:
