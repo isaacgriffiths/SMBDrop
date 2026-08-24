@@ -5,6 +5,8 @@ struct Destination: Codable, Equatable, Sendable {
         case missingHost
         case invalidHost
         case missingShare
+        case invalidShare
+        case invalidSubfolder
         case missingUsername
 
         var errorDescription: String? {
@@ -15,6 +17,10 @@ struct Destination: Codable, Equatable, Sendable {
                 "Enter a valid host name or IP address without smb:// or a folder path."
             case .missingShare:
                 "Enter the SMB share name."
+            case .invalidShare:
+                "Enter only the share name, without slashes or a folder path."
+            case .invalidSubfolder:
+                "Enter a folder inside the share without . or .. path segments."
             case .missingUsername:
                 "Enter the username for your SMB share."
             }
@@ -38,7 +44,32 @@ struct Destination: Codable, Equatable, Sendable {
         guard !host.contains("://"), !host.contains("/"), !host.contains("\\") else {
             throw ValidationError.invalidHost
         }
+        guard
+            let components = URLComponents(string: "smb://\(host)"),
+            components.scheme == "smb",
+            components.host?.isEmpty == false,
+            components.user == nil,
+            components.password == nil,
+            components.path.isEmpty,
+            components.query == nil,
+            components.fragment == nil,
+            components.url != nil
+        else {
+            throw ValidationError.invalidHost
+        }
         guard !share.isEmpty else { throw ValidationError.missingShare }
+        guard !share.contains("/"), !share.contains("\\") else {
+            throw ValidationError.invalidShare
+        }
+        if !subfolder.isEmpty {
+            let subfolderParts = subfolder.split(separator: "/", omittingEmptySubsequences: false)
+            guard
+                !subfolder.contains("\\"),
+                !subfolderParts.contains(where: { $0.isEmpty || $0 == "." || $0 == ".." })
+            else {
+                throw ValidationError.invalidSubfolder
+            }
+        }
         guard !username.isEmpty else { throw ValidationError.missingUsername }
 
         self.host = host
