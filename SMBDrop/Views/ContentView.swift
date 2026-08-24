@@ -75,10 +75,41 @@ struct ContentView: View {
             TextField("Subfolder (optional)", text: $viewModel.subfolder)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
+            Button {
+                Task { await viewModel.findShares() }
+            } label: {
+                HStack {
+                    Label("Find Shares", systemImage: "magnifyingglass")
+                    Spacer()
+                    if viewModel.isFindingShares {
+                        ProgressView()
+                    }
+                }
+            }
+            .disabled(!viewModel.canFindShares)
+            ForEach(viewModel.availableShares, id: \.self) { name in
+                Button {
+                    viewModel.selectShare(name)
+                } label: {
+                    HStack {
+                        Label(name, systemImage: "externaldrive")
+                            .foregroundStyle(.primary)
+                        Spacer()
+                        if viewModel.share == name {
+                            Image(systemName: "checkmark")
+                                .foregroundStyle(.tint)
+                        }
+                    }
+                }
+            }
         } header: {
             Text("Server")
         } footer: {
-            Text("For example: host nas.local, share Photos, subfolder iPhone Uploads.")
+            Text(
+                viewModel.availableShares.isEmpty
+                    ? "Fill in the address and Sign In below, then Find Shares lists this server's shares to pick from."
+                    : "Tap a share to use it."
+            )
         }
 
         Section {

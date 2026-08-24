@@ -17,19 +17,24 @@ final class DestinationSetupViewModel: ObservableObject {
     @Published var password = ""
     @Published private(set) var savedDestination: Destination?
     @Published private(set) var connectionState: ConnectionState = .idle
+    @Published private(set) var availableShares: [String] = []
+    @Published private(set) var isFindingShares = false
     @Published var isEditing = false
 
     private let store: DestinationStore
     private let connectionTester: any DestinationConnectionTesting
+    private let shareLister: any DestinationShareListing
     private var savedPassword: String?
     private var verifiedForm: FormValues?
 
     init(
         store: DestinationStore = DestinationStore(),
-        connectionTester: any DestinationConnectionTesting = SMBConnectionTester()
+        connectionTester: any DestinationConnectionTesting = SMBConnectionTester(),
+        shareLister: any DestinationShareListing = SMBShareLister()
     ) {
         self.store = store
         self.connectionTester = connectionTester
+        self.shareLister = shareLister
         loadSavedDestination()
     }
 
@@ -47,6 +52,13 @@ final class DestinationSetupViewModel: ObservableObject {
 
     var canSave: Bool {
         connectionState == .success && verifiedForm == currentForm
+    }
+
+    var canFindShares: Bool {
+        !host.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && !username.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && !password.isEmpty
+            && !isFindingShares
     }
 
     var savedPath: String {
@@ -79,7 +91,45 @@ final class DestinationSetupViewModel: ObservableObject {
         } catch {
             verifiedForm = nil
             connectionState = .failure(error.localizedDescription)
+            if error as? SMBConnectionError == .shareOrFolderMissing {
+                // Offer the server's actual shares next to the failure so the
+                // user taps a real name instead of guessing again.
+                availableShares =
+                    (try? await shareLister.availableShares(
+                        host: form.host,
+                        username: form.username,
+                        password: form.password
+                    )) ?? []
+            }
         }
+    }
+
+    func findShares() async {
+        guard canFindShares else { return }
+        isFindingShares = true
+        defer { isFindingShares = false }
+        do {
+            let shares = try await shareLister.availableShares(
+                host: host,
+                username: username,
+                password: password
+            )
+            availableShares = shares
+            if shares.count == 1, let onlyShare = shares.first {
+                share = onlyShare
+            } else if shares.isEmpty {
+                connectionState = .failure(
+                    "The server accepted the sign-in but shows no shares for this account."
+                )
+            }
+        } catch {
+            availableShares = []
+            connectionState = .failure(error.localizedDescription)
+        }
+    }
+
+    func selectShare(_ name: String) {
+        share = name
     }
 
     func save() {
@@ -92,6 +142,7 @@ final class DestinationSetupViewModel: ObservableObject {
             isEditing = false
             connectionState = .idle
             verifiedForm = nil
+            availableShares = []
         } catch {
             connectionState = .failure(error.localizedDescription)
         }
@@ -120,6 +171,7 @@ final class DestinationSetupViewModel: ObservableObject {
         password = savedPassword ?? ""
         connectionState = .idle
         verifiedForm = nil
+        availableShares = []
         isEditing = true
     }
 
@@ -127,6 +179,7 @@ final class DestinationSetupViewModel: ObservableObject {
         isEditing = false
         connectionState = .idle
         verifiedForm = nil
+        availableShares = []
     }
 
     func removeDestination() {
@@ -142,6 +195,7 @@ final class DestinationSetupViewModel: ObservableObject {
             isEditing = false
             connectionState = .idle
             verifiedForm = nil
+            availableShares = []
         } catch {
             connectionState = .failure(error.localizedDescription)
         }

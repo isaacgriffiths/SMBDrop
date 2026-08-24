@@ -33,7 +33,7 @@ struct Destination: Codable, Equatable, Sendable {
     let username: String
 
     init(host: String, share: String, subfolder: String, username: String) throws {
-        let host = host.trimmingCharacters(in: .whitespacesAndNewlines)
+        let host = try Self.validatedHost(host)
         // PhotoSync displays shares as "/share"; accept edge slashes verbatim.
         let share = share.trimmingCharacters(in: .whitespacesAndNewlines)
             .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
@@ -43,24 +43,6 @@ struct Destination: Codable, Equatable, Sendable {
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
 
-        guard !host.isEmpty else { throw ValidationError.missingHost }
-        guard !host.contains("://"), !host.contains("/"), !host.contains("\\") else {
-            throw ValidationError.invalidHost
-        }
-        guard
-            let components = URLComponents(string: "smb://\(host)"),
-            components.scheme == "smb",
-            components.host?.isEmpty == false,
-            components.user == nil,
-            components.password == nil,
-            components.path.isEmpty,
-            components.port == nil,
-            components.query == nil,
-            components.fragment == nil,
-            components.url != nil
-        else {
-            throw ValidationError.invalidHost
-        }
         guard !share.isEmpty else { throw ValidationError.missingShare }
         guard !share.contains("/"), !share.contains("\\") else {
             throw ValidationError.invalidShare
@@ -85,6 +67,29 @@ struct Destination: Codable, Equatable, Sendable {
     var serverURL: URL {
         // The initializer validates that the host cannot alter the URL path.
         URL(string: "smb://\(host)")!
+    }
+
+    static func validatedHost(_ host: String) throws -> String {
+        let host = host.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !host.isEmpty else { throw ValidationError.missingHost }
+        guard !host.contains("://"), !host.contains("/"), !host.contains("\\") else {
+            throw ValidationError.invalidHost
+        }
+        guard
+            let components = URLComponents(string: "smb://\(host)"),
+            components.scheme == "smb",
+            components.host?.isEmpty == false,
+            components.user == nil,
+            components.password == nil,
+            components.path.isEmpty,
+            components.port == nil,
+            components.query == nil,
+            components.fragment == nil,
+            components.url != nil
+        else {
+            throw ValidationError.invalidHost
+        }
+        return host
     }
 
     var remotePath: String {

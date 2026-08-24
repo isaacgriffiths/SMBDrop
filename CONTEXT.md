@@ -15,6 +15,7 @@
 - The non-secret fields live in the shared App Group. The password lives in the iOS Keychain and is never stored in preferences or logs.
 - Save is available only after Test Connection succeeds for the exact current field values. Editing any value requires another test.
 - Test Connection opens the share and verifies the configured subfolder. Failures are translated into friendly authentication, timeout, reachability, and missing-path messages.
+- **Find Shares** — with host and sign-in filled, SMBDrop enumerates the server's visible disk shares (srvsvc over IPC$, hidden `$` shares excluded) so the user taps a real share instead of typing one; a lone share auto-fills the field. When a test fails because the share is missing, the suggestions load automatically beside the error. Mirrors PhotoSync and the Files app, and exists because typed share names were the dominant setup failure.
 
 ## Transfer contract (v1)
 
