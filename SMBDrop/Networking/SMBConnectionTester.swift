@@ -7,7 +7,7 @@ protocol DestinationConnectionTesting {
 
 protocol SMBConnectionSession: AnyObject {
     var timeout: TimeInterval { get set }
-    func connectShare(name: String) async throws
+    func connectShare(name: String, encrypted: Bool) async throws
     func echo() async throws
     func attributesOfItem(atPath path: String) async throws -> [URLResourceKey: Any]
     func disconnectShare(gracefully: Bool) async throws
@@ -37,7 +37,7 @@ struct SMBConnectionTester: DestinationConnectionTesting {
         var connectedToShare = false
 
         do {
-            try await session.connectShare(name: destination.share)
+            try await session.connectShare(name: destination.share, encrypted: false)
             connectedToShare = true
             if destination.remotePath == "/" {
                 try await session.echo()
@@ -161,8 +161,8 @@ private final class AMSMB2ConnectionSession: SMBConnectionSession {
         set { manager.timeout = newValue }
     }
 
-    func connectShare(name: String) async throws {
-        try await manager.connectShare(name: name)
+    func connectShare(name: String, encrypted: Bool) async throws {
+        try await manager.connectShare(name: name, encrypted: encrypted)
     }
 
     func echo() async throws {
