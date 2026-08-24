@@ -405,7 +405,8 @@ final class TransferOutboxTests: XCTestCase {
         try Data("late".utf8).write(to: sourceURL)
         let outbox = TransferOutbox(rootURL: rootURL.appendingPathComponent("Outbox"))
 
-        XCTAssertTrue(try await outbox.retireDestination(destinationID))
+        let retired = try await outbox.retireDestination(destinationID)
+        XCTAssertTrue(retired)
 
         do {
             _ = try await outbox.enqueueFile(
