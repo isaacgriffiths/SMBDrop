@@ -37,7 +37,17 @@ struct SMBConnectionTester: DestinationConnectionTesting {
         var connectedToShare = false
 
         do {
-            try await session.connectShare(name: destination.share, encrypted: false)
+            do {
+                try await session.connectShare(name: destination.share, encrypted: false)
+            } catch {
+                // A share that requires SMB3 encryption denies unsealed connects
+                // even with valid credentials; retry sealed like Automatic clients.
+                let friendly = SMBConnectionError.friendly(error)
+                guard friendly == .authenticationFailed || friendly == .connectionFailed else {
+                    throw error
+                }
+                try await session.connectShare(name: destination.share, encrypted: true)
+            }
             connectedToShare = true
             if destination.remotePath == "/" {
                 try await session.echo()
