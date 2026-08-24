@@ -360,19 +360,12 @@ actor TransferOutbox {
         try fileManager.createDirectory(at: rootURL, withIntermediateDirectories: true)
         let lockURL = rootURL.appendingPathComponent(".outbox.lock", isDirectory: false)
         let descriptor = lockURL.path.withCString {
-            Darwin.open($0, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR)
+            Darwin.open($0, O_CREAT | O_RDWR | O_EXLOCK, S_IRUSR | S_IWUSR)
         }
         guard descriptor >= 0 else {
             throw TransferOutboxError.storageLockUnavailable
         }
         defer { Darwin.close(descriptor) }
-
-        while Darwin.flock(descriptor, LOCK_EX) != 0 {
-            guard errno == EINTR else {
-                throw TransferOutboxError.storageLockUnavailable
-            }
-        }
-        defer { Darwin.flock(descriptor, LOCK_UN) }
 
         return try operation()
     }
