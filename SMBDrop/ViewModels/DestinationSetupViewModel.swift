@@ -10,6 +10,12 @@ final class DestinationSetupViewModel: ObservableObject {
         case failure(String)
     }
 
+    enum DestinationRemovalResult: Equatable {
+        case removed
+        case pendingTransfers
+        case failed(String)
+    }
+
     @Published var host = ""
     @Published var share = ""
     @Published var subfolder = ""
@@ -321,19 +327,21 @@ final class DestinationSetupViewModel: ObservableObject {
         resetFolderBrowser()
     }
 
-    func removeDestination() async -> Bool {
-        guard let id = editingDestinationID ?? destinations.first?.id else { return false }
+    func removeDestination() async -> DestinationRemovalResult {
+        guard let id = editingDestinationID ?? destinations.first?.id else {
+            return .failed("That SMB share is no longer saved.")
+        }
         return await removeDestination(id)
     }
 
-    func removeDestination(_ id: UUID) async -> Bool {
+    func removeDestination(_ id: UUID) async -> DestinationRemovalResult {
         do {
             let outbox = try TransferOutbox.shared()
             guard try await outbox.retireDestination(id) else {
                 connectionState = .failure(
                     "Finish, retry, or remove this share's pending transfers before deleting it."
                 )
-                return false
+                return .pendingTransfers
             }
             do {
                 try store.remove(id: id)
@@ -355,10 +363,11 @@ final class DestinationSetupViewModel: ObservableObject {
             verifiedForm = nil
             availableShares = []
             resetFolderBrowser()
-            return true
+            return .removed
         } catch {
-            connectionState = .failure(error.localizedDescription)
-            return false
+            let message = error.localizedDescription
+            connectionState = .failure(message)
+            return .failed(message)
         }
     }
 

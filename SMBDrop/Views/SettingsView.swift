@@ -5,6 +5,7 @@ struct SettingsView: View {
     @ObservedObject var transferQueue: TransferQueueViewModel
     @State private var destinationToRemove: DestinationSummary?
     @State private var blockedDestinationRemoval: DestinationSummary?
+    @State private var destinationRemovalError: String?
 
     var body: some View {
         NavigationStack {
@@ -99,10 +100,15 @@ struct SettingsView: View {
             ) { destination in
                 Button("Remove", role: .destructive) {
                     Task {
-                        let removed = await viewModel.removeDestination(destination.id)
+                        let result = await viewModel.removeDestination(destination.id)
                         destinationToRemove = nil
-                        if !removed {
+                        switch result {
+                        case .removed:
+                            break
+                        case .pendingTransfers:
                             blockedDestinationRemoval = destination
+                        case .failed(let message):
+                            destinationRemovalError = message
                         }
                         await transferQueue.refresh()
                     }
@@ -124,6 +130,17 @@ struct SettingsView: View {
                 Button("OK", role: .cancel) { blockedDestinationRemoval = nil }
             } message: { destination in
                 Text("Finish, retry, or remove the pending items for \(destination.displayName) before deleting this share.")
+            }
+            .alert(
+                "Could Not Remove SMB Share",
+                isPresented: Binding(
+                    get: { destinationRemovalError != nil },
+                    set: { if !$0 { destinationRemovalError = nil } }
+                )
+            ) {
+                Button("OK", role: .cancel) { destinationRemovalError = nil }
+            } message: {
+                Text(destinationRemovalError ?? "Unknown error")
             }
             .onChange(of: viewModel.destinations) {
                 Task { await transferQueue.resume() }

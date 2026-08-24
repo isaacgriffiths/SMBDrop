@@ -57,6 +57,9 @@ if (!/ownerSessionID/.test(outbox) || !/SMBDropProcess\.sessionID/.test(outbox))
 if (/try\? await outbox\.restoreDestination/.test(setupViewModel) || !/DestinationRemovalError/.test(setupViewModel)) {
   throw new Error("A failed destination-removal rollback is still being hidden.");
 }
+if (!/DestinationRemovalResult/.test(setupViewModel) || !/Could Not Remove SMB Share/.test(settingsView)) {
+  throw new Error("Settings cannot distinguish pending transfers from a failed destination removal.");
+}
 if (!/Use & Save/.test(setupView) || !/useBrowsedFolder\(\) async/.test(setupViewModel)) {
   throw new Error("A browsed folder is not verified and saved before the picker closes.");
 }
@@ -80,6 +83,9 @@ if (!/Choose an SMB Share/.test(shareController) || !/TransferBatchProgress/.tes
 }
 if (!/itemNumber\(for: transfer\.id\)/.test(shareController)) {
   throw new Error("Share-extension status can mismatch a transfer filename and its N-of-X position.");
+}
+if (!/guard !isShowingTerminalState else/.test(shareController)) {
+  throw new Error("A delayed progress callback can overwrite terminal share-extension status.");
 }
 if (!/startUpload\(to: destination\)/.test(shareController) || /Send Items/.test(shareController)) {
   throw new Error("Choosing a share does not start the extension upload immediately.");

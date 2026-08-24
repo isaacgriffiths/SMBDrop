@@ -13,6 +13,7 @@ final class ShareViewController: UIViewController {
     private var destinations: [SavedDestination] = []
     private var transferSnapshots: [UUID: Transfer] = [:]
     private var workTask: Task<Void, Never>?
+    private var isShowingTerminalState = false
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -106,6 +107,7 @@ final class ShareViewController: UIViewController {
 
     private func startUpload(to destination: SavedDestination) {
         guard workTask == nil else { return }
+        isShowingTerminalState = false
         destinationButton.configuration?.title = destination.summary.displayName
         destinationButton.configuration?.subtitle = destination.summary.displayPath
         destinationButton.isEnabled = false
@@ -188,6 +190,7 @@ final class ShareViewController: UIViewController {
     }
 
     private func showProgress(_ transfer: Transfer) {
+        guard !isShowingTerminalState else { return }
         transferSnapshots[transfer.id] = transfer
         let overall = TransferBatchProgress(transfers: Array(transferSnapshots.values))
         progressView.progress = Float(overall.fractionCompleted)
@@ -209,6 +212,7 @@ final class ShareViewController: UIViewController {
     }
 
     private func showSuccess(count: Int) {
+        isShowingTerminalState = true
         icon.image = UIImage(systemName: "checkmark.circle.fill")
         icon.tintColor = .systemGreen
         statusLabel.text = "Uploaded \(count) of \(count) items successfully."
@@ -225,6 +229,7 @@ final class ShareViewController: UIViewController {
     }
 
     private func showQueued(count: Int) {
+        isShowingTerminalState = true
         icon.image = UIImage(systemName: "clock.arrow.circlepath")
         statusLabel.text = "Queued \(count) item\(count == 1 ? "" : "s"). Open SMBDrop to finish uploading."
         destinationButton.isHidden = true
@@ -238,6 +243,7 @@ final class ShareViewController: UIViewController {
     }
 
     private func showFailure(_ message: String) {
+        isShowingTerminalState = true
         icon.image = UIImage(systemName: "exclamationmark.triangle.fill")
         icon.tintColor = .systemRed
         statusLabel.text = message
