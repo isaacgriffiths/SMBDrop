@@ -173,6 +173,32 @@ actor TransferOutbox {
         }
     }
 
+    func updateProgress(_ work: TransferWork, bytesTransferred: Int64) throws -> Transfer {
+        try withExclusiveLock {
+            var transfer = try transferUnlocked(id: work.transfer.id)
+            try requireCurrentClaim(work)
+            guard transfer.status == .uploading else {
+                throw TransferOutboxError.invalidState
+            }
+            guard bytesTransferred >= transfer.bytesTransferred,
+                  bytesTransferred <= transfer.byteCount else {
+                throw TransferOutboxError.invalidProgress
+            }
+
+            let currentDate = now()
+            let renewedClaim = Claim(
+                id: work.claimID,
+                expiresAt: currentDate.addingTimeInterval(claimLeaseDuration)
+            )
+            try writeClaim(renewedClaim, for: transfer.id)
+
+            transfer.updatedAt = currentDate
+            transfer.bytesTransferred = bytesTransferred
+            try write(transfer)
+            return transfer
+        }
+    }
+
     func retry(_ id: UUID) throws -> Transfer {
         try withExclusiveLock {
             var transfer = try transferUnlocked(id: id)
@@ -303,6 +329,7 @@ actor TransferOutbox {
 enum TransferOutboxError: LocalizedError {
     case appGroupUnavailable
     case invalidFilename
+    case invalidProgress
     case invalidState
     case payloadMissing
     case sourceIsNotAFile
@@ -316,6 +343,8 @@ enum TransferOutboxError: LocalizedError {
             "SMBDrop could not open its shared transfer storage."
         case .invalidFilename:
             "That file does not have a valid name."
+        case .invalidProgress:
+            "The transfer progress is outside the staged file size."
         case .invalidState:
             "That transfer cannot be changed from its current state."
         case .payloadMissing:
