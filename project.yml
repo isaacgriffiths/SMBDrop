@@ -25,6 +25,7 @@ targets:
     platform: iOS
     sources:
       - SMBDrop
+      - Shared
     dependencies:
       - target: ShareExtension
       - package: AMSMB2
@@ -44,6 +45,7 @@ targets:
     platform: iOS
     sources:
       - ShareExtension
+      - Shared
     dependencies:
       # AMSMB2 is a dynamic framework embedded once, in the app bundle; the
       # extension links against the app's copy via the runpath below.

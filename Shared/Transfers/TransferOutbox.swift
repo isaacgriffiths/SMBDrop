@@ -28,7 +28,7 @@ struct TransferWork: Sendable {
 }
 
 actor TransferOutbox {
-    static let appGroup = DestinationStore.appGroup
+    static let appGroup = SMBDropAppGroup.identifier
 
     private let rootURL: URL
     private let fileManager: FileManager
