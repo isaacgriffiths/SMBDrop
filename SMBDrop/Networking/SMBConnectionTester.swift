@@ -22,7 +22,8 @@ struct SMBConnectionTester: DestinationConnectionTesting {
             if destination.remotePath == "/" {
                 try await manager.echo()
             } else {
-                _ = try await manager.attributesOfItem(atPath: destination.remotePath)
+                let attributes = try await manager.attributesOfItem(atPath: destination.remotePath)
+                try Self.validateSubfolderAttributes(attributes)
             }
             try await manager.disconnectShare(gracefully: true)
         } catch {
@@ -30,9 +31,15 @@ struct SMBConnectionTester: DestinationConnectionTesting {
             throw SMBConnectionError.friendly(error)
         }
     }
+
+    static func validateSubfolderAttributes(_ attributes: [URLResourceKey: Any]) throws {
+        guard attributes[.isDirectoryKey] as? Bool == true else {
+            throw SMBConnectionError.shareOrFolderMissing
+        }
+    }
 }
 
-enum SMBConnectionError: LocalizedError {
+enum SMBConnectionError: LocalizedError, Equatable {
     case invalidServer
     case authenticationFailed
     case serverUnavailable

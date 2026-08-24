@@ -51,6 +51,7 @@ struct Destination: Codable, Equatable, Sendable {
             components.user == nil,
             components.password == nil,
             components.path.isEmpty,
+            components.port == nil,
             components.query == nil,
             components.fragment == nil,
             components.url != nil
