@@ -41,6 +41,30 @@ final class DestinationTests: XCTestCase {
             String(describing: $0).contains("super-secret")
         })
     }
+
+    func testDestinationRejectsUnsafeShareAndSubfolderPaths() throws {
+        XCTAssertThrowsError(
+            try Destination(
+                host: "nas.local",
+                share: "Photos/Private",
+                subfolder: "",
+                username: "isaac"
+            )
+        ) { error in
+            XCTAssertEqual(error as? Destination.ValidationError, .invalidShare)
+        }
+
+        XCTAssertThrowsError(
+            try Destination(
+                host: "nas.local",
+                share: "Photos",
+                subfolder: "Uploads/../Private",
+                username: "isaac"
+            )
+        ) { error in
+            XCTAssertEqual(error as? Destination.ValidationError, .invalidSubfolder)
+        }
+    }
 }
 
 private final class MemoryPasswordVault: PasswordVault {
