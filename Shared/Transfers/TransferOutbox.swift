@@ -114,7 +114,10 @@ actor TransferOutbox {
 
                 switch transfer.status {
                 case .queued:
-                    guard existingClaim == nil else { continue }
+                    if let existingClaim {
+                        guard existingClaim.expiresAt <= currentDate else { continue }
+                        try removeClaim(for: transfer.id)
+                    }
                 case .uploading:
                     guard (existingClaim?.expiresAt ?? .distantPast) <= currentDate else { continue }
                     try removeClaim(for: transfer.id)
@@ -131,8 +134,6 @@ actor TransferOutbox {
                     id: UUID(),
                     expiresAt: currentDate.addingTimeInterval(claimLeaseDuration)
                 )
-                try writeClaim(claim, for: transfer.id)
-
                 transfer.status = .uploading
                 transfer.updatedAt = currentDate
                 transfer.bytesTransferred = 0
@@ -141,6 +142,7 @@ actor TransferOutbox {
 
                 do {
                     try write(transfer)
+                    try writeClaim(claim, for: transfer.id)
                     return TransferWork(
                         transfer: transfer,
                         fileURL: fileURL,
@@ -148,6 +150,7 @@ actor TransferOutbox {
                     )
                 } catch {
                     try? removeClaim(for: transfer.id)
+                    try? write(storedTransfer)
                     throw error
                 }
             }
@@ -254,18 +257,30 @@ actor TransferOutbox {
 
     private func transfersUnlocked() throws -> [Transfer] {
         guard fileManager.fileExists(atPath: rootURL.path) else { return [] }
-        return try fileManager.contentsOfDirectory(
+        let directoryURLs = try fileManager.contentsOfDirectory(
             at: rootURL,
             includingPropertiesForKeys: [.isDirectoryKey],
             options: [.skipsHiddenFiles]
         )
-        .compactMap { directoryURL in
-            try? decoder.decode(
+
+        let transfers = directoryURLs.compactMap { directoryURL -> Transfer? in
+            guard let transfer = try? decoder.decode(
                 Transfer.self,
                 from: Data(contentsOf: directoryURL.appendingPathComponent("transfer.json"))
-            )
+            ) else {
+                return nil
+            }
+
+            if transfer.status == .completed {
+                let stagedPayloadURL = payloadURL(for: transfer.id)
+                if fileManager.fileExists(atPath: stagedPayloadURL.path) {
+                    try? fileManager.removeItem(at: stagedPayloadURL)
+                }
+            }
+            return transfer
         }
-        .sorted {
+
+        return transfers.sorted {
             if $0.createdAt == $1.createdAt {
                 return $0.id.uuidString < $1.id.uuidString
             }
@@ -326,7 +341,8 @@ actor TransferOutbox {
     }
 
     private func requireCurrentClaim(_ work: TransferWork) throws {
-        guard try readClaim(for: work.transfer.id)?.id == work.claimID else {
+        guard let claim = try readClaim(for: work.transfer.id),
+              claim.id == work.claimID else {
             throw TransferOutboxError.claimNoLongerValid
         }
     }
