@@ -100,6 +100,24 @@ final class SMBConnectionTesterTests: XCTestCase {
 
         XCTAssertEqual(session.connectAttempts, [false, true])
     }
+
+    func testConnectionDoesNotTurnSuccessfulVerificationIntoFailureWhenDisconnectFails() async throws {
+        let destination = try Destination(
+            host: "192.168.1.122",
+            share: "share",
+            subfolder: "",
+            username: "isaac"
+        )
+        let session = DisconnectFailingSMBSession()
+        let tester = SMBConnectionTester(
+            tcpProbe: SuccessfulTCPProbe(),
+            sessionFactory: { _, _ in session }
+        )
+
+        try await tester.testConnection(to: destination, password: "secret")
+
+        XCTAssertEqual(session.disconnectAttempts, [true])
+    }
 }
 
 private struct SuccessfulTCPProbe: TCPConnectionProbing {
@@ -172,4 +190,24 @@ private final class EncryptionRequiringSMBSession: SMBConnectionSession {
     }
 
     func disconnectShare(gracefully: Bool) async throws {}
+}
+
+// A server can confirm every operation on the wire before libsmb2 reports a
+// stale socket/errno failure while tearing down the already-verified session.
+private final class DisconnectFailingSMBSession: SMBConnectionSession {
+    var timeout: TimeInterval = 0
+    private(set) var disconnectAttempts: [Bool] = []
+
+    func connectShare(name: String, encrypted: Bool) async throws {}
+
+    func echo() async throws {}
+
+    func attributesOfItem(atPath path: String) async throws -> [URLResourceKey: Any] {
+        [:]
+    }
+
+    func disconnectShare(gracefully: Bool) async throws {
+        disconnectAttempts.append(gracefully)
+        throw POSIXError(.EACCES)
+    }
 }

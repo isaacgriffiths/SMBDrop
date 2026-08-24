@@ -55,7 +55,12 @@ struct SMBConnectionTester: DestinationConnectionTesting {
                 let attributes = try await session.attributesOfItem(atPath: destination.remotePath)
                 try Self.validateSubfolderAttributes(attributes)
             }
-            try await session.disconnectShare(gracefully: true)
+            // Connecting to the share and verifying it are the test. Some
+            // libsmb2 builds can surface a stale socket/errno failure after
+            // the server has already acknowledged tree disconnect + logoff;
+            // cleanup must not turn that verified connection into an auth
+            // failure.
+            try? await session.disconnectShare(gracefully: true)
         } catch {
             try? await session.disconnectShare(gracefully: false)
             let friendly = SMBConnectionError.friendly(error)
