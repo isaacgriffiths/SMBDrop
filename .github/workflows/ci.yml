@@ -34,6 +34,9 @@ jobs:
       - name: Check shared transfer outbox target configuration
         run: node scripts/check-shared-outbox.mjs
 
+      - name: Check folder browser and share upload wiring
+        run: node scripts/check-transfer-features.mjs
+
       - name: Verify claims across separate processes
         shell: bash
         run: |

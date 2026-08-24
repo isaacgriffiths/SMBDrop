@@ -63,7 +63,11 @@ actor TransferOutbox {
         )
     }
 
-    func enqueueFile(at sourceURL: URL, filename: String) throws -> Transfer {
+    func enqueueFile(
+        at sourceURL: URL,
+        filename: String,
+        moveSource: Bool = false
+    ) throws -> Transfer {
         let filename = try canonicalFilename(filename)
         let resourceValues = try sourceURL.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
         guard resourceValues.isRegularFile == true else {
@@ -88,7 +92,11 @@ actor TransferOutbox {
 
             do {
                 try fileManager.createDirectory(at: directoryURL, withIntermediateDirectories: false)
-                try fileManager.copyItem(at: sourceURL, to: payloadURL(for: transfer.id))
+                if moveSource {
+                    try fileManager.moveItem(at: sourceURL, to: payloadURL(for: transfer.id))
+                } else {
+                    try fileManager.copyItem(at: sourceURL, to: payloadURL(for: transfer.id))
+                }
                 try write(transfer)
                 return transfer
             } catch {

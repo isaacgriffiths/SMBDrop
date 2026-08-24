@@ -85,9 +85,36 @@ final class DestinationSetupViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.availableShares, ["share"])
     }
 
+    func testBrowseFoldersNavigatesAndSelectsARealSubfolder() async throws {
+        let folderLister = FakeFolderLister(foldersByPath: [
+            "": [SMBFolder(name: "video", path: "video")],
+            "video": [SMBFolder(name: "phone", path: "video/phone")],
+        ])
+        let viewModel = try makeViewModel(
+            shareLister: FakeShareLister(shares: ["share"]),
+            folderLister: folderLister
+        )
+        viewModel.host = "192.168.1.122"
+        viewModel.share = "share"
+        viewModel.username = "isaac"
+        viewModel.password = "super-secret"
+
+        await viewModel.beginFolderBrowsing()
+        XCTAssertEqual(viewModel.availableFolders.map(\.name), ["video"])
+
+        await viewModel.browseIntoFolder(try XCTUnwrap(viewModel.availableFolders.first))
+        XCTAssertEqual(viewModel.folderBrowsePath, "video")
+        XCTAssertEqual(viewModel.availableFolders.map(\.name), ["phone"])
+
+        viewModel.selectBrowsedFolder()
+        XCTAssertEqual(viewModel.subfolder, "video")
+        XCTAssertEqual(viewModel.connectionState, .idle)
+    }
+
     private func makeViewModel(
         connectionTester: any DestinationConnectionTesting = SuccessfulConnectionTester(),
-        shareLister: any DestinationShareListing
+        shareLister: any DestinationShareListing,
+        folderLister: any DestinationFolderListing = FakeFolderLister(foldersByPath: [:])
     ) throws -> DestinationSetupViewModel {
         let suiteName = "SMBDropTests.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
@@ -99,7 +126,8 @@ final class DestinationSetupViewModelTests: XCTestCase {
         return DestinationSetupViewModel(
             store: store,
             connectionTester: connectionTester,
-            shareLister: shareLister
+            shareLister: shareLister,
+            folderLister: folderLister
         )
     }
 }
@@ -121,6 +149,18 @@ private struct FakeShareLister: DestinationShareListing {
 
     func availableShares(host: String, username: String, password: String) async throws -> [String] {
         shares
+    }
+}
+
+private struct FakeFolderLister: DestinationFolderListing {
+    let foldersByPath: [String: [SMBFolder]]
+
+    func folders(
+        at subfolder: String,
+        in destination: Destination,
+        password: String
+    ) async throws -> [SMBFolder] {
+        foldersByPath[subfolder] ?? []
     }
 }
 

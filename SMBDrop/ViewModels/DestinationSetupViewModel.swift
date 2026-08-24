@@ -19,22 +19,29 @@ final class DestinationSetupViewModel: ObservableObject {
     @Published private(set) var connectionState: ConnectionState = .idle
     @Published private(set) var availableShares: [String] = []
     @Published private(set) var isFindingShares = false
+    @Published private(set) var availableFolders: [SMBFolder] = []
+    @Published private(set) var folderBrowsePath = ""
+    @Published private(set) var folderBrowseError: String?
+    @Published private(set) var isLoadingFolders = false
     @Published var isEditing = false
 
     private let store: DestinationStore
     private let connectionTester: any DestinationConnectionTesting
     private let shareLister: any DestinationShareListing
+    private let folderLister: any DestinationFolderListing
     private var savedPassword: String?
     private var verifiedForm: FormValues?
 
     init(
         store: DestinationStore = DestinationStore(),
         connectionTester: any DestinationConnectionTesting = SMBConnectionTester(),
-        shareLister: any DestinationShareListing = SMBShareLister()
+        shareLister: any DestinationShareListing = SMBShareLister(),
+        folderLister: any DestinationFolderListing = SMBFolderLister()
     ) {
         self.store = store
         self.connectionTester = connectionTester
         self.shareLister = shareLister
+        self.folderLister = folderLister
         loadSavedDestination()
     }
 
@@ -59,6 +66,22 @@ final class DestinationSetupViewModel: ObservableObject {
             && !username.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             && !password.isEmpty
             && !isFindingShares
+    }
+
+    var canBrowseFolders: Bool {
+        !host.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && !share.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && !username.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && !password.isEmpty
+            && !isLoadingFolders
+    }
+
+    var folderBrowseDisplayPath: String {
+        folderBrowsePath.isEmpty ? "/\(share)" : "/\(share)/\(folderBrowsePath)"
+    }
+
+    var canBrowseToParentFolder: Bool {
+        !folderBrowsePath.isEmpty && !isLoadingFolders
     }
 
     var savedPath: String {
@@ -130,6 +153,44 @@ final class DestinationSetupViewModel: ObservableObject {
 
     func selectShare(_ name: String) {
         share = name
+        subfolder = ""
+        resetFolderBrowser()
+    }
+
+    func beginFolderBrowsing() async {
+        guard canBrowseFolders else { return }
+        do {
+            let destination = try currentForm.destination()
+            await loadFolders(at: destination.subfolder, destination: destination)
+            if folderBrowseError != nil, !destination.subfolder.isEmpty {
+                // A manually typed path may be stale or may repeat the share
+                // name (for example /share/video). Fall back to the share root
+                // so the user can still navigate to the real folder.
+                await loadFolders(at: "", destination: destination)
+            }
+        } catch {
+            availableFolders = []
+            folderBrowseError = error.localizedDescription
+        }
+    }
+
+    func browseIntoFolder(_ folder: SMBFolder) async {
+        guard let destination = try? currentForm.destination() else { return }
+        await loadFolders(at: folder.path, destination: destination)
+    }
+
+    func browseToParentFolder() async {
+        guard canBrowseToParentFolder,
+              let destination = try? currentForm.destination() else { return }
+        var components = folderBrowsePath.split(separator: "/").map(String.init)
+        _ = components.popLast()
+        await loadFolders(at: components.joined(separator: "/"), destination: destination)
+    }
+
+    func selectBrowsedFolder() {
+        subfolder = folderBrowsePath
+        connectionState = .idle
+        verifiedForm = nil
     }
 
     func save() {
@@ -143,6 +204,7 @@ final class DestinationSetupViewModel: ObservableObject {
             connectionState = .idle
             verifiedForm = nil
             availableShares = []
+            resetFolderBrowser()
         } catch {
             connectionState = .failure(error.localizedDescription)
         }
@@ -172,6 +234,7 @@ final class DestinationSetupViewModel: ObservableObject {
         connectionState = .idle
         verifiedForm = nil
         availableShares = []
+        resetFolderBrowser()
         isEditing = true
     }
 
@@ -180,6 +243,7 @@ final class DestinationSetupViewModel: ObservableObject {
         connectionState = .idle
         verifiedForm = nil
         availableShares = []
+        resetFolderBrowser()
     }
 
     func removeDestination() {
@@ -196,6 +260,7 @@ final class DestinationSetupViewModel: ObservableObject {
             connectionState = .idle
             verifiedForm = nil
             availableShares = []
+            resetFolderBrowser()
         } catch {
             connectionState = .failure(error.localizedDescription)
         }
@@ -209,6 +274,33 @@ final class DestinationSetupViewModel: ObservableObject {
         } catch {
             connectionState = .failure(error.localizedDescription)
         }
+    }
+
+    private func loadFolders(at path: String, destination: Destination) async {
+        isLoadingFolders = true
+        folderBrowseError = nil
+        defer { isLoadingFolders = false }
+        do {
+            let folders = try await folderLister.folders(
+                at: path,
+                in: destination,
+                password: password
+            )
+            folderBrowsePath = path
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+            availableFolders = folders
+        } catch {
+            availableFolders = []
+            folderBrowseError = error.localizedDescription
+        }
+    }
+
+    private func resetFolderBrowser() {
+        availableFolders = []
+        folderBrowsePath = ""
+        folderBrowseError = nil
+        isLoadingFolders = false
     }
 
     private var currentForm: FormValues {
