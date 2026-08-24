@@ -421,6 +421,28 @@ final class TransferOutboxTests: XCTestCase {
         }
     }
 
+    func testSavedDestinationRecoversFromInterruptedRemoval() async throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("SMBDropTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+        let sourceURL = rootURL.appendingPathComponent("recovered.txt")
+        try Data("recovered".utf8).write(to: sourceURL)
+        let outbox = TransferOutbox(rootURL: rootURL.appendingPathComponent("Outbox"))
+        let retired = try await outbox.retireDestination(destinationID)
+        XCTAssertTrue(retired)
+
+        try await outbox.reconcileRetiredDestinations(with: Set([destinationID]))
+        let transfer = try await outbox.enqueueFile(
+            at: sourceURL,
+            filename: "recovered.txt",
+            destinationID: destinationID,
+            batchID: batchID
+        )
+
+        XCTAssertEqual(transfer.destinationID, destinationID)
+    }
+
     private func stageLegacyTransfer(
         at sourceURL: URL,
         filename: String,

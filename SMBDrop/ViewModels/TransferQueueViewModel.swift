@@ -97,6 +97,9 @@ final class TransferQueueViewModel: ObservableObject {
         do {
             let outbox = try outboxFactory()
             let destinations = try destinationStore.loadAll()
+            try await outbox.reconcileRetiredDestinations(
+                with: Set(destinations.map(\.id))
+            )
             destinationNames = Dictionary(
                 uniqueKeysWithValues: destinations.map { ($0.id, $0.summary.displayName) }
             )

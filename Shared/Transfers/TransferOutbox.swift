@@ -248,6 +248,20 @@ actor TransferOutbox {
         }
     }
 
+    /// Repairs a process termination between writing a retirement tombstone
+    /// and removing the matching saved destination. A destination that still
+    /// exists is authoritative and must remain usable.
+    func reconcileRetiredDestinations(with activeDestinationIDs: Set<UUID>) throws {
+        try withExclusiveLock {
+            var retiredIDs = readRetiredDestinationIDs()
+            let originalIDs = retiredIDs
+            retiredIDs.subtract(activeDestinationIDs)
+            if retiredIDs != originalIDs {
+                try writeRetiredDestinationIDs(retiredIDs)
+            }
+        }
+    }
+
     func fail(_ work: TransferWork, message: String) throws -> Transfer {
         try withExclusiveLock {
             var transfer = try transferUnlocked(id: work.transfer.id)
