@@ -199,6 +199,31 @@ actor TransferOutbox {
         }
     }
 
+    func complete(_ work: TransferWork, remoteFilename: String) throws -> Transfer {
+        let remoteFilename = try canonicalFilename(remoteFilename)
+        return try withExclusiveLock {
+            var transfer = try transferUnlocked(id: work.transfer.id)
+            try requireCurrentClaim(work)
+            guard transfer.status == .uploading else {
+                throw TransferOutboxError.invalidState
+            }
+
+            transfer.status = .completed
+            transfer.updatedAt = now()
+            transfer.bytesTransferred = transfer.byteCount
+            transfer.remoteFilename = remoteFilename
+            transfer.errorMessage = nil
+            try write(transfer)
+
+            let fileURL = payloadURL(for: transfer.id)
+            if fileManager.fileExists(atPath: fileURL.path) {
+                try fileManager.removeItem(at: fileURL)
+            }
+            try removeClaim(for: transfer.id)
+            return transfer
+        }
+    }
+
     func retry(_ id: UUID) throws -> Transfer {
         try withExclusiveLock {
             var transfer = try transferUnlocked(id: id)
