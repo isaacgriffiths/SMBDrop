@@ -284,7 +284,8 @@ final class TransferOutboxTests: XCTestCase {
             destinationID: destinationID,
             batchID: batchID
         )
-        let work = try XCTUnwrap(try await owner.claimNext(for: destinationID))
+        let claimedWork = try await owner.claimNext(for: destinationID)
+        let work = try XCTUnwrap(claimedWork)
         let requester = TransferOutbox(rootURL: outboxURL)
 
         let result = try await requester.requestRemoval(staged.id)
@@ -312,7 +313,8 @@ final class TransferOutboxTests: XCTestCase {
             destinationID: destinationID,
             batchID: batchID
         )
-        let work = try XCTUnwrap(try await owner.claimNext(for: destinationID))
+        let claimedWork = try await owner.claimNext(for: destinationID)
+        let work = try XCTUnwrap(claimedWork)
         let requester = TransferOutbox(rootURL: outboxURL)
 
         let didBeginPublishing = try await owner.beginPublishing(work)
@@ -341,11 +343,13 @@ final class TransferOutboxTests: XCTestCase {
             destinationID: destinationID,
             batchID: batchID
         )
-        let work = try XCTUnwrap(try await owner.claimNext(for: destinationID))
+        let claimedWork = try await owner.claimNext(for: destinationID)
+        let work = try XCTUnwrap(claimedWork)
 
         let released = try await owner.release(work)
         let restarted = TransferOutbox(rootURL: outboxURL)
-        let claimedAgain = try XCTUnwrap(try await restarted.claimNext(for: destinationID))
+        let restartedClaim = try await restarted.claimNext(for: destinationID)
+        let claimedAgain = try XCTUnwrap(restartedClaim)
 
         XCTAssertEqual(released.status, .queued)
         XCTAssertEqual(released.bytesTransferred, 0)
