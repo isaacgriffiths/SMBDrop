@@ -267,4 +267,26 @@ final class TransferOutboxTests: XCTestCase {
 
         XCTAssertNil(competingClaim)
     }
+
+    func testOriginalFilenameIsPreservedExactly() async throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("SMBDropTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        let sourceURL = rootURL.appendingPathComponent("source.pdf")
+        try Data("original document bytes".utf8).write(to: sourceURL)
+        let outbox = TransferOutbox(
+            rootURL: rootURL.appendingPathComponent("Outbox", isDirectory: true)
+        )
+
+        let staged = try await outbox.enqueueFile(
+            at: sourceURL,
+            filename: " Report final .pdf "
+        )
+
+        XCTAssertEqual(staged.filename, " Report final .pdf ")
+        let persisted = try await outbox.transfers()
+        XCTAssertEqual(persisted.first?.filename, " Report final .pdf ")
+    }
 }
