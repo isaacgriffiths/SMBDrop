@@ -1,18 +1,26 @@
+import BackgroundTasks
 import Combine
 import Foundation
+import UIKit
 
 @MainActor
 final class TransferQueueViewModel: ObservableObject {
+    private static let continuedTaskIdentifier = "com.isaacgriffiths.smbdrop.transfer"
+
     @Published private(set) var transfers: [Transfer] = []
     @Published private(set) var isDraining = false
     @Published private(set) var message: String?
     @Published private(set) var activeBatchID: UUID?
     @Published private(set) var destinationNames: [UUID: String] = [:]
+    @Published private(set) var pendingRemovalIDs: Set<UUID> = []
 
     private let destinationStore: DestinationStore
     private let worker: SMBTransferWorker
     private let outboxFactory: () throws -> TransferOutbox
     private var resumeRequested = false
+    private var isContinuedTaskRegistered = false
+    private var isContinuedTaskRunning = false
+    private var reportContinuedProgress: ((TransferBatchProgress) -> Void)?
 
     init(
         destinationStore: DestinationStore = DestinationStore(),
@@ -59,6 +67,17 @@ final class TransferQueueViewModel: ObservableObject {
         message = nil
     }
 
+    func startUserInitiatedTransfer() async {
+        if #available(iOS 26.0, *), submitContinuedProcessingTask() {
+            return
+        }
+
+        let backgroundAssertion = LegacyTransferBackgroundAssertion()
+        backgroundAssertion.begin()
+        await resume()
+        backgroundAssertion.end()
+    }
+
     @discardableResult
     func enqueueFile(
         at sourceURL: URL,
@@ -83,6 +102,8 @@ final class TransferQueueViewModel: ObservableObject {
         do {
             let outbox = try outboxFactory()
             transfers = try await outbox.transfers()
+            prunePendingRemovalIDs()
+            reportProgressIfNeeded()
             updateDestinationNames()
         } catch {
             message = error.localizedDescription
@@ -110,6 +131,8 @@ final class TransferQueueViewModel: ObservableObject {
                 try await outbox.assignUnassignedTransfers(to: legacyDestination.id)
             }
             transfers = try await outbox.transfers()
+            prunePendingRemovalIDs()
+            reportProgressIfNeeded()
 
             let unfinished = transfers.filter {
                 $0.status == .queued || $0.status == .uploading
@@ -162,10 +185,14 @@ final class TransferQueueViewModel: ObservableObject {
                     }
                 }
                 transfers = try await outbox.transfers()
+                prunePendingRemovalIDs()
+                reportProgressIfNeeded()
                 if let failed = result.failed {
                     message = failed.errorMessage
                 }
-                if result.completed.isEmpty && result.failed == nil {
+                if result.completed.isEmpty,
+                   result.failed == nil,
+                   transfers.contains(where: { $0.id == nextTransfer.id }) {
                     // Another process owns the active claim. It will either
                     // finish the item or leave it for a later foreground resume.
                     break
@@ -190,11 +217,18 @@ final class TransferQueueViewModel: ObservableObject {
     }
 
     func remove(_ id: UUID) async {
+        guard !pendingRemovalIDs.contains(id) else { return }
+        pendingRemovalIDs.insert(id)
         do {
             let outbox = try outboxFactory()
-            try await outbox.remove(id)
+            let result = try await outbox.requestRemoval(id)
             transfers = try await outbox.transfers()
+            prunePendingRemovalIDs()
+            if result == .cancellationRequested {
+                await resume()
+            }
         } catch {
+            pendingRemovalIDs.remove(id)
             message = error.localizedDescription
         }
     }
@@ -214,6 +248,95 @@ final class TransferQueueViewModel: ObservableObject {
         )
     }
 
+    private func prunePendingRemovalIDs() {
+        let retainedIDs = Set(transfers.filter { $0.status != .completed }.map(\.id))
+        pendingRemovalIDs.formIntersection(retainedIDs)
+    }
+
+    @available(iOS 26.0, *)
+    private func submitContinuedProcessingTask() -> Bool {
+        if isContinuedTaskRunning {
+            Task { await self.resume() }
+            return true
+        }
+
+        if !isContinuedTaskRegistered {
+            isContinuedTaskRegistered = BGTaskScheduler.shared.register(
+                forTaskWithIdentifier: Self.continuedTaskIdentifier,
+                using: nil
+            ) { [weak self] submittedTask in
+                guard let task = submittedTask as? BGContinuedProcessingTask else {
+                    submittedTask.setTaskCompleted(success: false)
+                    return
+                }
+                Task { @MainActor [weak self] in
+                    guard let self else {
+                        task.setTaskCompleted(success: false)
+                        return
+                    }
+                    await self.runContinuedProcessingTask(task)
+                }
+            }
+        }
+        guard isContinuedTaskRegistered else { return false }
+
+        let request = BGContinuedProcessingTaskRequest(
+            identifier: Self.continuedTaskIdentifier,
+            title: "Uploading to SMB",
+            subtitle: "Preparing transfer…"
+        )
+        request.strategy = .fail
+        do {
+            try BGTaskScheduler.shared.submit(request)
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    @available(iOS 26.0, *)
+    private func runContinuedProcessingTask(_ task: BGContinuedProcessingTask) async {
+        isContinuedTaskRunning = true
+        reportContinuedProgress = { progress in
+            let totalUnits = max(1, progress.totalBytes)
+            task.progress.totalUnitCount = totalUnits
+            task.progress.completedUnitCount = min(
+                totalUnits,
+                max(0, progress.bytesTransferred)
+            )
+            let percent = Int(progress.fractionCompleted * 100)
+            task.updateTitle(
+                "Uploading to SMB",
+                subtitle: "\(progress.countText) · \(percent)%"
+            )
+        }
+        reportProgressIfNeeded()
+
+        let operation = Task { @MainActor [weak self] in
+            await self?.resume()
+        }
+        task.expirationHandler = {
+            operation.cancel()
+        }
+        await operation.value
+
+        let trackedTransfers = activeTransfers
+        let hasUnfinished = trackedTransfers.contains {
+            $0.status == .queued || $0.status == .uploading
+        }
+        let hasFailure = trackedTransfers.contains { $0.status == .failed }
+        task.setTaskCompleted(
+            success: !operation.isCancelled && !hasUnfinished && !hasFailure
+        )
+        reportContinuedProgress = nil
+        isContinuedTaskRunning = false
+    }
+
+    private func reportProgressIfNeeded() {
+        guard let activeProgress else { return }
+        reportContinuedProgress?(activeProgress)
+    }
+
     private func replace(_ transfer: Transfer) {
         if let index = transfers.firstIndex(where: { $0.id == transfer.id }) {
             transfers[index] = transfer
@@ -221,5 +344,25 @@ final class TransferQueueViewModel: ObservableObject {
             transfers.append(transfer)
             transfers.sort { $0.createdAt < $1.createdAt }
         }
+        reportProgressIfNeeded()
+    }
+}
+
+@MainActor
+private final class LegacyTransferBackgroundAssertion {
+    private var identifier = UIBackgroundTaskIdentifier.invalid
+
+    func begin() {
+        identifier = UIApplication.shared.beginBackgroundTask(
+            withName: "Finish SMB transfer"
+        ) { [weak self] in
+            self?.end()
+        }
+    }
+
+    func end() {
+        guard identifier != .invalid else { return }
+        UIApplication.shared.endBackgroundTask(identifier)
+        identifier = .invalid
     }
 }

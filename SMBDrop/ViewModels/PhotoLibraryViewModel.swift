@@ -140,7 +140,7 @@ final class PhotoLibraryViewModel: NSObject, ObservableObject, PHPhotoLibraryCha
         }
 
         clearSelection()
-        await transferQueue.resume()
+        await transferQueue.startUserInitiatedTransfer()
     }
 
     private func reload() {

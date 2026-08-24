@@ -164,11 +164,11 @@ struct FilesBrowserView: View {
             }
             files = []
             isPreparing = false
-            await transferQueue.resume()
+            await transferQueue.startUserInitiatedTransfer()
         } catch {
             isPreparing = false
             exportError = error.localizedDescription
-            await transferQueue.resume()
+            await transferQueue.startUserInitiatedTransfer()
         }
     }
 }

@@ -2,6 +2,11 @@ import SwiftUI
 
 struct TransferActivityView: View {
     @ObservedObject var transferQueue: TransferQueueViewModel
+    @State private var showsItems = false
+
+    private var removableTransfers: [Transfer] {
+        transferQueue.activeTransfers.filter { $0.status != .completed }
+    }
 
     var body: some View {
         if let progress = transferQueue.activeProgress {
@@ -53,10 +58,67 @@ struct TransferActivityView: View {
                         .font(.caption)
                         .foregroundStyle(.red)
                 }
+
+                if !removableTransfers.isEmpty {
+                    Divider()
+                    DisclosureGroup(isExpanded: $showsItems) {
+                        VStack(spacing: 0) {
+                            ForEach(removableTransfers) { transfer in
+                                HStack(spacing: 10) {
+                                    Image(systemName: transfer.status == .uploading
+                                        ? "arrow.up.circle.fill"
+                                        : "clock"
+                                    )
+                                    .foregroundStyle(transfer.status == .uploading
+                                        ? Color.accentColor
+                                        : Color.secondary
+                                    )
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(transfer.filename)
+                                            .font(.caption)
+                                            .lineLimit(1)
+                                        Text(statusText(for: transfer))
+                                            .font(.caption2)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                    Spacer()
+                                    if transferQueue.pendingRemovalIDs.contains(transfer.id) {
+                                        ProgressView()
+                                            .controlSize(.small)
+                                            .accessibilityLabel("Removing \(transfer.filename)")
+                                    } else {
+                                        Button(role: .destructive) {
+                                            Task { await transferQueue.remove(transfer.id) }
+                                        } label: {
+                                            Image(systemName: "trash")
+                                        }
+                                        .buttonStyle(.plain)
+                                        .accessibilityLabel("Remove \(transfer.filename) from current transfer")
+                                    }
+                                }
+                                .padding(.vertical, 8)
+                            }
+                        }
+                    } label: {
+                        Text("Manage \(removableTransfers.count) Item\(removableTransfers.count == 1 ? "" : "s")")
+                            .font(.subheadline.weight(.semibold))
+                    }
+                }
             }
             .padding(14)
             .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 16))
-            .accessibilityElement(children: .combine)
+        }
+    }
+
+    private func statusText(for transfer: Transfer) -> String {
+        if transferQueue.pendingRemovalIDs.contains(transfer.id) {
+            return "Removing…"
+        }
+        switch transfer.status {
+        case .queued: "Queued"
+        case .uploading: "Sending"
+        case .failed: "Failed"
+        case .completed: "Uploaded"
         }
     }
 }

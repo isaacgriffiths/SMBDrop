@@ -29,6 +29,16 @@ struct TransferWork: Sendable {
     let transfer: Transfer
     let fileURL: URL
     let claimID: UUID
+    let removalRequestURL: URL
+
+    var isRemovalRequested: Bool {
+        FileManager.default.fileExists(atPath: removalRequestURL.path)
+    }
+}
+
+enum TransferRemovalResult: Equatable, Sendable {
+    case removed
+    case cancellationRequested
 }
 
 actor TransferOutbox {
@@ -190,7 +200,8 @@ actor TransferOutbox {
                     return TransferWork(
                         transfer: transfer,
                         fileURL: fileURL,
-                        claimID: claim.id
+                        claimID: claim.id,
+                        removalRequestURL: removalRequestURL(for: transfer.id)
                     )
                 } catch {
                     try? removeClaim(for: transfer.id)
@@ -334,6 +345,7 @@ actor TransferOutbox {
                 try fileManager.removeItem(at: fileURL)
             }
             try removeClaim(for: transfer.id)
+            try removeRemovalRequest(for: transfer.id)
             return transfer
         }
     }
@@ -354,15 +366,57 @@ actor TransferOutbox {
             transfer.remoteFilename = nil
             transfer.errorMessage = nil
             try removeClaim(for: id)
+            try removeRemovalRequest(for: id)
             try write(transfer)
             return transfer
         }
     }
 
     func remove(_ id: UUID) throws {
+        guard try requestRemoval(id) == .removed else {
+            throw TransferOutboxError.invalidState
+        }
+    }
+
+    func requestRemoval(_ id: UUID) throws -> TransferRemovalResult {
         try withExclusiveLock {
-            _ = try transferUnlocked(id: id)
-            try fileManager.removeItem(at: transferDirectoryURL(for: id))
+            let transfer = try transferUnlocked(id: id)
+            if transfer.status == .uploading {
+                try Data().write(to: removalRequestURL(for: id), options: .atomic)
+                return .cancellationRequested
+            } else {
+                try fileManager.removeItem(at: transferDirectoryURL(for: id))
+                return .removed
+            }
+        }
+    }
+
+    func removeClaimed(_ work: TransferWork) throws {
+        try withExclusiveLock {
+            _ = try transferUnlocked(id: work.transfer.id)
+            try requireCurrentClaim(work)
+            guard fileManager.fileExists(atPath: removalRequestURL(for: work.transfer.id).path) else {
+                throw TransferOutboxError.invalidState
+            }
+            try fileManager.removeItem(at: transferDirectoryURL(for: work.transfer.id))
+        }
+    }
+
+    func release(_ work: TransferWork) throws -> Transfer {
+        try withExclusiveLock {
+            var transfer = try transferUnlocked(id: work.transfer.id)
+            try requireCurrentClaim(work)
+            guard transfer.status == .uploading,
+                  !fileManager.fileExists(atPath: removalRequestURL(for: transfer.id).path) else {
+                throw TransferOutboxError.invalidState
+            }
+            transfer.status = .queued
+            transfer.updatedAt = now()
+            transfer.bytesTransferred = 0
+            transfer.errorMessage = nil
+            try write(transfer)
+            try removeClaim(for: transfer.id)
+            return transfer
         }
     }
 
@@ -428,6 +482,13 @@ actor TransferOutbox {
         transferDirectoryURL(for: id).appendingPathComponent("claim.json", isDirectory: false)
     }
 
+    private func removalRequestURL(for id: UUID) -> URL {
+        transferDirectoryURL(for: id).appendingPathComponent(
+            "removal-requested",
+            isDirectory: false
+        )
+    }
+
     private var retiredDestinationsURL: URL {
         rootURL.appendingPathComponent(".retired-destinations.json", isDirectory: false)
     }
@@ -477,6 +538,12 @@ actor TransferOutbox {
 
     private func removeClaim(for id: UUID) throws {
         let url = claimURL(for: id)
+        guard fileManager.fileExists(atPath: url.path) else { return }
+        try fileManager.removeItem(at: url)
+    }
+
+    private func removeRemovalRequest(for id: UUID) throws {
+        let url = removalRequestURL(for: id)
         guard fileManager.fileExists(atPath: url.path) else { return }
         try fileManager.removeItem(at: url)
     }

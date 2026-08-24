@@ -71,13 +71,18 @@ struct SMBTransferUploader: SMBTransferUploading {
             )
             let temporaryPath = Self.remotePath(
                 folderPath: destination.remotePath,
-                filename: ".\(makeUUID().uuidString).smbdrop-partial"
+                filename: "smbdrop-\(makeUUID().uuidString).partial"
             )
             partialPath = temporaryPath
 
             try await session.uploadItem(at: work.fileURL, toPath: temporaryPath) { bytes in
+                guard !Task.isCancelled, !work.isRemovalRequested else { return false }
                 progress(bytes)
-                return true
+                return !Task.isCancelled && !work.isRemovalRequested
+            }
+            guard !Task.isCancelled else { throw CancellationError() }
+            guard !work.isRemovalRequested else {
+                throw TransferUploadError.cancelled
             }
             let attributes = try await session.attributesOfItem(atPath: temporaryPath)
             guard Self.fileSize(in: attributes) == work.transfer.byteCount else {
@@ -92,6 +97,10 @@ struct SMBTransferUploader: SMBTransferUploading {
             }
             sourceDates[.contentModificationDateKey] = modificationDate
             try await session.setAttributes(sourceDates, ofItemAtPath: temporaryPath)
+            guard !Task.isCancelled else { throw CancellationError() }
+            guard !work.isRemovalRequested else {
+                throw TransferUploadError.cancelled
+            }
             try await session.moveItem(atPath: temporaryPath, toPath: finalPath)
             partialPath = nil
             try? await session.disconnectShare(gracefully: true)
@@ -101,6 +110,12 @@ struct SMBTransferUploader: SMBTransferUploading {
                 try? await session.removeFile(atPath: partialPath)
             }
             try? await session.disconnectShare(gracefully: false)
+            if Task.isCancelled {
+                throw CancellationError()
+            }
+            if work.isRemovalRequested {
+                throw TransferUploadError.cancelled
+            }
             if error is TransferUploadError {
                 throw error
             }
@@ -181,6 +196,14 @@ struct SMBTransferWorker {
                 for: destinationID,
                 matching: transferIDs
             ) {
+                if work.isRemovalRequested {
+                    try await outbox.removeClaimed(work)
+                    continue
+                }
+                if Task.isCancelled {
+                    _ = try await outbox.release(work)
+                    return TransferDrainResult(completed: completed, failed: nil)
+                }
                 let (stream, continuation) = AsyncStream<Int64>.makeStream()
                 let progressTask = Task {
                     for await bytes in stream {
@@ -213,6 +236,14 @@ struct SMBTransferWorker {
                 } catch {
                     continuation.finish()
                     await progressTask.value
+                    if work.isRemovalRequested {
+                        try await outbox.removeClaimed(work)
+                        continue
+                    }
+                    if error is CancellationError || Task.isCancelled {
+                        _ = try await outbox.release(work)
+                        return TransferDrainResult(completed: completed, failed: nil)
+                    }
                     let message = error.localizedDescription
                     let failed = try await outbox.fail(work, message: message)
                     progress?(failed)
@@ -231,6 +262,7 @@ enum TransferUploadError: LocalizedError, Equatable {
     case sizeMismatch
     case fileAlreadyExists(String)
     case sourceTimestampUnavailable
+    case cancelled
 
     var errorDescription: String? {
         switch self {
@@ -240,6 +272,8 @@ enum TransferUploadError: LocalizedError, Equatable {
             "A file named \(filename) already exists. SMBDrop kept the item queued instead of changing its name or overwriting it."
         case .sourceTimestampUnavailable:
             "The original file timestamp is unavailable. SMBDrop kept the item queued instead of replacing it with the upload time."
+        case .cancelled:
+            "The transfer was removed."
         }
     }
 }

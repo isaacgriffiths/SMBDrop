@@ -241,6 +241,84 @@ final class TransferOutboxTests: XCTestCase {
         XCTAssertTrue(remainingTransfers.isEmpty)
     }
 
+    func testRequestingRemovalOfQueuedTransferDeletesItImmediately() async throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("SMBDropTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        let sourceURL = rootURL.appendingPathComponent("queued.mov")
+        try Data("queued video".utf8).write(to: sourceURL)
+        let outbox = TransferOutbox(
+            rootURL: rootURL.appendingPathComponent("Outbox", isDirectory: true)
+        )
+        let staged = try await outbox.enqueueFile(
+            at: sourceURL,
+            filename: "queued.mov",
+            destinationID: destinationID,
+            batchID: batchID
+        )
+
+        let result = try await outbox.requestRemoval(staged.id)
+
+        XCTAssertEqual(result, .removed)
+        XCTAssertTrue(try await outbox.transfers().isEmpty)
+    }
+
+    func testRequestingRemovalOfUploadingTransferIsHonoredByItsOwner() async throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("SMBDropTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        let sourceURL = rootURL.appendingPathComponent("sending.mov")
+        try Data("sending video".utf8).write(to: sourceURL)
+        let outboxURL = rootURL.appendingPathComponent("Outbox", isDirectory: true)
+        let owner = TransferOutbox(rootURL: outboxURL)
+        let staged = try await owner.enqueueFile(
+            at: sourceURL,
+            filename: "sending.mov",
+            destinationID: destinationID,
+            batchID: batchID
+        )
+        let work = try XCTUnwrap(try await owner.claimNext(for: destinationID))
+        let requester = TransferOutbox(rootURL: outboxURL)
+
+        let result = try await requester.requestRemoval(staged.id)
+
+        XCTAssertEqual(result, .cancellationRequested)
+        XCTAssertTrue(work.isRemovalRequested)
+        try await owner.removeClaimed(work)
+        XCTAssertTrue(try await requester.transfers().isEmpty)
+    }
+
+    func testReleasingClaimedTransferMakesItQueuedAndClaimableAgain() async throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("SMBDropTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        let sourceURL = rootURL.appendingPathComponent("paused.mov")
+        try Data("paused video".utf8).write(to: sourceURL)
+        let outboxURL = rootURL.appendingPathComponent("Outbox", isDirectory: true)
+        let owner = TransferOutbox(rootURL: outboxURL)
+        let staged = try await owner.enqueueFile(
+            at: sourceURL,
+            filename: "paused.mov",
+            destinationID: destinationID,
+            batchID: batchID
+        )
+        let work = try XCTUnwrap(try await owner.claimNext(for: destinationID))
+
+        let released = try await owner.release(work)
+        let restarted = TransferOutbox(rootURL: outboxURL)
+        let claimedAgain = try XCTUnwrap(try await restarted.claimNext(for: destinationID))
+
+        XCTAssertEqual(released.status, .queued)
+        XCTAssertEqual(released.bytesTransferred, 0)
+        XCTAssertEqual(claimedAgain.transfer.id, staged.id)
+    }
+
     func testConcurrentProcessesCannotClaimTheSameTransfer() async throws {
         let rootURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("SMBDropTests-\(UUID().uuidString)", isDirectory: true)

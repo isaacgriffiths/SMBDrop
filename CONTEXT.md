@@ -24,7 +24,8 @@
 - Transfers run one item at a time. The Main App resumes durable work in global queue order; a foreground Share Extension drains only the batch the user just submitted so it does not consume an unrelated backlog. Each upload streams from a local file URL, writes to a unique `.smbdrop-partial` remote name, verifies the uploaded byte count, and then renames into place.
 - Every Transfer is bound to a Destination ID and export batch before upload, so one Destination worker can never claim another share's files. Existing single-Destination queues are migrated to their original Destination.
 - Progress is presented for the whole export batch: aggregate bytes plus the current item number (`N of X`). Individual history rows show status without competing progress bars.
-- Every item is staged in a durable App Group outbox before upload. Interrupted uploads remain retryable; completed files are removed from local staging but retained as lightweight history.
+- Every item is staged in a durable App Group outbox before upload. Interrupted uploads remain retryable; completed files are removed from local staging but retained as lightweight history. Current Transfer lets the user remove queued items immediately or stop and remove the active item safely; an active removal request is durable across the app and Share Extension.
+- Temporary remote names are visible, UUID-based `smbdrop-*.partial` names. They never begin with a dot because Samba can preserve the dot-file Hidden attribute after the final rename and make a successful upload disappear from normal Windows Explorer views.
 - Automatic retry is bounded. A failed item stays visible with a friendly error and can be retried by the user; queued items after it are not discarded.
 - SMB is a local-network protocol, so v1 has no separate Wi-Fi-only switch or custom port/dialect controls.
 
@@ -33,6 +34,7 @@
 - **Photos** is a permission-aware, Photos-style thumbnail grid for images and videos with native multi-selection. It stages original `PHAssetResource` bytes, including the paired video for a Live Photo.
 - **Files** launches Apple's native document picker with multi-selection, then stages security-scoped files without changing their bytes or names. UIKit requires a full document browser to be the app's root controller, so it cannot be embedded as one tab of SMBDrop's three-tab interface.
 - Photos and Files both present the same Destination picker and enqueue through the shared durable outbox.
+- On iOS 26 and later, a user-started Photos or Files export runs as a Continued Processing Task so SMB work can continue after the Main App backgrounds and the system shows progress in a Live Activity/Dynamic Island. Older iOS versions use the supported short background-completion window; anything still unfinished remains durable for the next foreground resume.
 
 ## Share Extension architecture
 

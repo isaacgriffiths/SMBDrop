@@ -38,7 +38,7 @@ final class SMBTransferWorkerTests: XCTestCase {
         )
         XCTAssertEqual(
             session.uploadedPath,
-            "/video/.AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE.smbdrop-partial"
+            "/video/smbdrop-AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE.partial"
         )
         XCTAssertEqual(session.movedFromPath, session.uploadedPath)
         XCTAssertEqual(session.attributesPath, session.uploadedPath)
@@ -84,6 +84,41 @@ final class SMBTransferWorkerTests: XCTestCase {
         XCTAssertEqual(session.disconnectModes, [false])
     }
 
+    func testUploaderStopsAndRemovesPartialWhenTransferRemovalIsRequested() async throws {
+        let fixture = try UploadFixture(filename: "clip.mov", bytes: Data("video bytes".utf8))
+        defer { fixture.remove() }
+        let work = try await fixture.claimedWork()
+        let session = FakeUploadSession(
+            existingNames: [],
+            beforeProgress: {
+                _ = try await fixture.outbox.requestRemoval(work.transfer.id)
+            }
+        )
+        let uploader = SMBTransferUploader(sessionFactory: { _, _ in session })
+        let destination = try Destination(
+            host: "192.168.1.122",
+            share: "share",
+            subfolder: "Video",
+            username: "isaac"
+        )
+
+        do {
+            _ = try await uploader.upload(
+                work,
+                to: destination,
+                password: "secret",
+                progress: { _ in }
+            )
+            XCTFail("A removal request must stop before the partial file is published")
+        } catch {
+            XCTAssertEqual(error as? TransferUploadError, .cancelled)
+        }
+
+        XCTAssertEqual(session.removedPaths, [session.uploadedPath])
+        XCTAssertNil(session.movedToPath)
+        XCTAssertEqual(session.disconnectModes, [false])
+    }
+
     func testWorkerCompletesDurableTransferAndRemovesStagedPayload() async throws {
         let fixture = try UploadFixture(filename: "IMG_0001.HEIC", bytes: Data("photo bytes".utf8))
         defer { fixture.remove() }
@@ -110,6 +145,33 @@ final class SMBTransferWorkerTests: XCTestCase {
         XCTAssertEqual(result.completed.first?.bytesTransferred, staged.byteCount)
         let history = try await fixture.outbox.transfers()
         XCTAssertEqual(history.first?.status, .completed)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.payloadPath(for: staged.id)))
+    }
+
+    func testWorkerRemovesTransferWhenUploaderObservesRemovalRequest() async throws {
+        let fixture = try UploadFixture(filename: "remove.mov", bytes: Data("video bytes".utf8))
+        defer { fixture.remove() }
+        let staged = try await fixture.enqueue()
+        let worker = SMBTransferWorker(
+            uploader: RemovalRequestingUploader(outbox: fixture.outbox)
+        )
+        let destination = try Destination(
+            host: "nas.local",
+            share: "share",
+            subfolder: "Video",
+            username: "isaac"
+        )
+
+        let result = await worker.drain(
+            outbox: fixture.outbox,
+            destination: destination,
+            password: "secret",
+            destinationID: fixture.destinationID
+        )
+
+        XCTAssertTrue(result.completed.isEmpty)
+        XCTAssertNil(result.failed)
+        XCTAssertTrue(try await fixture.outbox.transfers().isEmpty)
         XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.payloadPath(for: staged.id)))
     }
 }
@@ -165,10 +227,16 @@ private final class FakeUploadSession: SMBUploadSession {
     var attributesPath: String?
     var writtenAttributes: [URLResourceKey: Any]?
     var disconnectModes: [Bool] = []
+    var removedPaths: [String] = []
     private let existingNames: [String]
+    private let beforeProgress: (() async throws -> Void)?
 
-    init(existingNames: [String]) {
+    init(
+        existingNames: [String],
+        beforeProgress: (() async throws -> Void)? = nil
+    ) {
         self.existingNames = existingNames
+        self.beforeProgress = beforeProgress
     }
 
     func connectShare(name: String, encrypted: Bool) async throws {}
@@ -184,7 +252,10 @@ private final class FakeUploadSession: SMBUploadSession {
     ) async throws {
         uploadedPath = remotePath
         uploadedBytes = try Data(contentsOf: localURL)
-        _ = progress(Int64(uploadedBytes?.count ?? 0))
+        try await beforeProgress?()
+        guard progress(Int64(uploadedBytes?.count ?? 0)) else {
+            throw FakeUploadError.stopped
+        }
     }
 
     func attributesOfItem(atPath path: String) async throws -> [URLResourceKey: Any] {
@@ -204,11 +275,17 @@ private final class FakeUploadSession: SMBUploadSession {
         movedToPath = toPath
     }
 
-    func removeFile(atPath path: String) async throws {}
+    func removeFile(atPath path: String) async throws {
+        removedPaths.append(path)
+    }
 
     func disconnectShare(gracefully: Bool) async throws {
         disconnectModes.append(gracefully)
     }
+}
+
+private enum FakeUploadError: Error {
+    case stopped
 }
 
 private struct FakeTransferUploader: SMBTransferUploading {
@@ -222,5 +299,19 @@ private struct FakeTransferUploader: SMBTransferUploading {
     ) async throws -> String {
         progress(work.transfer.byteCount)
         return remoteFilename
+    }
+}
+
+private struct RemovalRequestingUploader: SMBTransferUploading {
+    let outbox: TransferOutbox
+
+    func upload(
+        _ work: TransferWork,
+        to destination: Destination,
+        password: String,
+        progress: @escaping @Sendable (Int64) -> Void
+    ) async throws -> String {
+        _ = try await outbox.requestRemoval(work.transfer.id)
+        throw TransferUploadError.cancelled
     }
 }
