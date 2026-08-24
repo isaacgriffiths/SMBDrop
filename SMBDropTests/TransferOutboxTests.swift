@@ -101,4 +101,44 @@ final class TransferOutboxTests: XCTestCase {
         XCTAssertEqual(reclaimed.transfer.id, staged.id)
         XCTAssertEqual(reclaimed.transfer.attemptCount, 2)
     }
+
+    func testProgressPersistsAndRenewsTheActiveClaim() async throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("SMBDropTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        let sourceURL = rootURL.appendingPathComponent("archive.zip")
+        let bytes = Data("original archive bytes".utf8)
+        try bytes.write(to: sourceURL)
+        let outboxURL = rootURL.appendingPathComponent("Outbox", isDirectory: true)
+        let firstDate = Date(timeIntervalSince1970: 2_000)
+        let outbox = TransferOutbox(
+            rootURL: outboxURL,
+            claimLeaseDuration: 60,
+            now: { firstDate }
+        )
+
+        _ = try await outbox.enqueueFile(at: sourceURL, filename: "archive.zip")
+        let claim = try await outbox.claimNext()
+        let work = try XCTUnwrap(claim)
+        let uploadingProcess = TransferOutbox(
+            rootURL: outboxURL,
+            claimLeaseDuration: 60,
+            now: { firstDate.addingTimeInterval(30) }
+        )
+        let progress = try await uploadingProcess.updateProgress(work, bytesTransferred: 8)
+
+        XCTAssertEqual(progress.status, .uploading)
+        XCTAssertEqual(progress.bytesTransferred, 8)
+
+        let beforeRenewedLeaseExpires = TransferOutbox(
+            rootURL: outboxURL,
+            claimLeaseDuration: 60,
+            now: { firstDate.addingTimeInterval(61) }
+        )
+        XCTAssertNil(try await beforeRenewedLeaseExpires.claimNext())
+        let persisted = try await beforeRenewedLeaseExpires.transfers()
+        XCTAssertEqual(persisted.first?.bytesTransferred, 8)
+    }
 }
