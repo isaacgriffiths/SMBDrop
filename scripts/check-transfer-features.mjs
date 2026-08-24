@@ -54,6 +54,9 @@ if (!/retireDestination/.test(outbox) || !/destinationRemoved/.test(outbox) || !
 if (!/ownerSessionID/.test(outbox) || !/SMBDropProcess\.sessionID/.test(outbox)) {
   throw new Error("Destination retirement cannot distinguish an active removal from crash recovery.");
 }
+if (/try\? await outbox\.restoreDestination/.test(setupViewModel) || !/DestinationRemovalError/.test(setupViewModel)) {
+  throw new Error("A failed destination-removal rollback is still being hidden.");
+}
 if (!/Use & Save/.test(setupView) || !/useBrowsedFolder\(\) async/.test(setupViewModel)) {
   throw new Error("A browsed folder is not verified and saved before the picker closes.");
 }
@@ -74,6 +77,9 @@ if (!/enqueueFile/.test(shareController) || !/SMBTransferWorker/.test(shareContr
 }
 if (!/Choose an SMB Share/.test(shareController) || !/TransferBatchProgress/.test(shareController)) {
   throw new Error("The share extension does not choose a destination and show aggregate progress.");
+}
+if (!/itemNumber\(for: transfer\.id\)/.test(shareController)) {
+  throw new Error("Share-extension status can mismatch a transfer filename and its N-of-X position.");
 }
 if (!/startUpload\(to: destination\)/.test(shareController) || /Send Items/.test(shareController)) {
   throw new Error("Choosing a share does not start the extension upload immediately.");

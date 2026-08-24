@@ -192,16 +192,18 @@ final class ShareViewController: UIViewController {
         let overall = TransferBatchProgress(transfers: Array(transferSnapshots.values))
         progressView.progress = Float(overall.fractionCompleted)
         let percent = Int(overall.fractionCompleted * 100)
+        let itemNumber = overall.itemNumber(for: transfer.id) ?? overall.currentItemNumber
+        let itemCount = "\(itemNumber) of \(overall.totalCount)"
 
         switch transfer.status {
         case .queued:
-            statusLabel.text = "Item \(overall.countText) · \(percent)% overall\nQueued \(transfer.filename)…"
+            statusLabel.text = "Item \(itemCount) · \(percent)% overall\nQueued \(transfer.filename)…"
         case .uploading:
-            statusLabel.text = "Item \(overall.countText) · \(percent)% overall\nUploading \(transfer.filename)…"
+            statusLabel.text = "Item \(itemCount) · \(percent)% overall\nUploading \(transfer.filename)…"
         case .failed:
-            statusLabel.text = "Item \(overall.countText) · \(percent)% overall\nUpload failed for \(transfer.filename)."
+            statusLabel.text = "Item \(itemCount) · \(percent)% overall\nUpload failed for \(transfer.filename)."
         case .completed:
-            let count = overall.isComplete ? overall.totalCount : overall.currentItemNumber
+            let count = overall.isComplete ? overall.totalCount : itemNumber
             statusLabel.text = "Item \(count) of \(overall.totalCount) · \(percent)% overall"
         }
     }

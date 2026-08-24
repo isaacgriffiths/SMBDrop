@@ -337,9 +337,16 @@ final class DestinationSetupViewModel: ObservableObject {
             }
             do {
                 try store.remove(id: id)
-            } catch {
-                try? await outbox.restoreDestination(id)
-                throw error
+            } catch let storageError {
+                do {
+                    try await outbox.restoreDestination(id)
+                } catch let outboxError {
+                    throw DestinationRemovalError.rollbackFailed(
+                        storageError: storageError,
+                        outboxError: outboxError
+                    )
+                }
+                throw storageError
             }
             reloadDestinations()
             isEditing = false
@@ -411,6 +418,20 @@ final class DestinationSetupViewModel: ObservableObject {
             username: username,
             password: password
         )
+    }
+}
+
+private enum DestinationRemovalError: LocalizedError {
+    case rollbackFailed(storageError: Error, outboxError: Error)
+
+    var errorDescription: String? {
+        switch self {
+        case .rollbackFailed(let storageError, let outboxError):
+            "The SMB share is still saved, but its transfer lock could not be restored. "
+                + "Quit and reopen SMBDrop before sending to it again. "
+                + "Password cleanup: \(storageError.localizedDescription) "
+                + "Transfer recovery: \(outboxError.localizedDescription)"
+        }
     }
 }
 

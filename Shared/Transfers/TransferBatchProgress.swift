@@ -8,6 +8,7 @@ struct TransferBatchProgress: Equatable, Sendable {
     let bytesTransferred: Int64
     let totalBytes: Int64
     let currentFilename: String?
+    private let itemNumbers: [UUID: Int]
 
     init(transfers: [Transfer]) {
         let ordered = transfers.sorted {
@@ -16,23 +17,26 @@ struct TransferBatchProgress: Equatable, Sendable {
             }
             return $0.createdAt < $1.createdAt
         }
+        itemNumbers = Dictionary(
+            uniqueKeysWithValues: ordered.enumerated().map { ($0.element.id, $0.offset + 1) }
+        )
         totalCount = ordered.count
         completedCount = ordered.filter { $0.status == .completed }.count
         failedCount = ordered.filter { $0.status == .failed }.count
         let activeTransfer = ordered.first(where: { $0.status == .uploading })
             ?? ordered.first(where: { $0.status == .queued })
-        currentFilename = activeTransfer?.filename
-            ?? ordered.first(where: { $0.status == .failed })?.filename
+        let displayedTransfer = activeTransfer
+            ?? ordered.last(where: { $0.status == .failed })
+        currentFilename = displayedTransfer?.filename
 
         if ordered.isEmpty {
             currentItemNumber = 0
-        } else if let activeTransfer,
-                  let activeIndex = ordered.firstIndex(where: { $0.id == activeTransfer.id }) {
-            currentItemNumber = activeIndex + 1
+        } else if let displayedTransfer {
+            currentItemNumber = itemNumbers[displayedTransfer.id] ?? 0
         } else if completedCount == ordered.count {
             currentItemNumber = ordered.count
         } else {
-            currentItemNumber = min(ordered.count, completedCount + failedCount)
+            currentItemNumber = 0
         }
 
         totalBytes = ordered.reduce(0) { $0 + max(0, $1.byteCount) }
@@ -58,6 +62,10 @@ struct TransferBatchProgress: Equatable, Sendable {
 
     var countText: String {
         "\(currentItemNumber) of \(totalCount)"
+    }
+
+    func itemNumber(for transferID: UUID) -> Int? {
+        itemNumbers[transferID]
     }
 
     var isComplete: Bool {

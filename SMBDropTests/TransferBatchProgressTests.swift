@@ -47,41 +47,72 @@ final class TransferBatchProgressTests: XCTestCase {
         let batchID = UUID()
         let destinationID = UUID()
         let startDate = Date()
-        let transfers = [
-            transfer(
-                filename: "failed.jpg",
-                bytes: 100,
-                status: .failed,
-                bytesTransferred: 50,
-                destinationID: destinationID,
-                batchID: batchID,
-                createdAt: startDate
-            ),
-            transfer(
-                filename: "uploading.mov",
-                bytes: 300,
-                status: .uploading,
-                bytesTransferred: 100,
-                destinationID: destinationID,
-                batchID: batchID,
-                createdAt: startDate.addingTimeInterval(1)
-            ),
-            transfer(
-                filename: "queued.pdf",
-                bytes: 100,
-                status: .queued,
-                bytesTransferred: 0,
-                destinationID: destinationID,
-                batchID: batchID,
-                createdAt: startDate.addingTimeInterval(2)
-            ),
-        ]
+        let failed = transfer(
+            filename: "failed.jpg",
+            bytes: 100,
+            status: .failed,
+            bytesTransferred: 50,
+            destinationID: destinationID,
+            batchID: batchID,
+            createdAt: startDate
+        )
+        let uploading = transfer(
+            filename: "uploading.mov",
+            bytes: 300,
+            status: .uploading,
+            bytesTransferred: 100,
+            destinationID: destinationID,
+            batchID: batchID,
+            createdAt: startDate.addingTimeInterval(1)
+        )
+        let queued = transfer(
+            filename: "queued.pdf",
+            bytes: 100,
+            status: .queued,
+            bytesTransferred: 0,
+            destinationID: destinationID,
+            batchID: batchID,
+            createdAt: startDate.addingTimeInterval(2)
+        )
 
-        let progress = TransferBatchProgress(transfers: transfers)
+        let progress = TransferBatchProgress(transfers: [failed, uploading, queued])
 
         XCTAssertEqual(progress.currentFilename, "uploading.mov")
         XCTAssertEqual(progress.currentItemNumber, 2)
         XCTAssertEqual(progress.countText, "2 of 3")
+        XCTAssertEqual(progress.itemNumber(for: failed.id), 1)
+        XCTAssertEqual(progress.itemNumber(for: uploading.id), 2)
+        XCTAssertEqual(progress.itemNumber(for: queued.id), 3)
+    }
+
+    func testTerminalFailureFilenameAndCountReferToTheSameItem() {
+        let batchID = UUID()
+        let destinationID = UUID()
+        let startDate = Date()
+        let failed = transfer(
+            filename: "failed.jpg",
+            bytes: 100,
+            status: .failed,
+            bytesTransferred: 50,
+            destinationID: destinationID,
+            batchID: batchID,
+            createdAt: startDate
+        )
+        let completed = transfer(
+            filename: "completed.mov",
+            bytes: 300,
+            status: .completed,
+            bytesTransferred: 300,
+            destinationID: destinationID,
+            batchID: batchID,
+            createdAt: startDate.addingTimeInterval(1)
+        )
+
+        let progress = TransferBatchProgress(transfers: [failed, completed])
+
+        XCTAssertEqual(progress.currentFilename, "failed.jpg")
+        XCTAssertEqual(progress.currentItemNumber, 1)
+        XCTAssertEqual(progress.countText, "1 of 2")
     }
 
     private func transfer(
