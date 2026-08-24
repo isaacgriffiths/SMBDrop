@@ -15,6 +15,7 @@ final class DestinationSetupViewModel: ObservableObject {
     @Published var subfolder = ""
     @Published var username = ""
     @Published var password = ""
+    @Published private(set) var destinations: [DestinationSummary] = []
     @Published private(set) var savedDestination: Destination?
     @Published private(set) var connectionState: ConnectionState = .idle
     @Published private(set) var availableShares: [String] = []
@@ -30,6 +31,7 @@ final class DestinationSetupViewModel: ObservableObject {
     private let shareLister: any DestinationShareListing
     private let folderLister: any DestinationFolderListing
     private var savedPassword: String?
+    private var editingDestinationID: UUID?
     private var verifiedForm: FormValues?
 
     init(
@@ -46,7 +48,7 @@ final class DestinationSetupViewModel: ObservableObject {
     }
 
     var isShowingSetup: Bool {
-        savedDestination == nil || isEditing
+        destinations.isEmpty || isEditing
     }
 
     var canTest: Bool {
@@ -94,6 +96,10 @@ final class DestinationSetupViewModel: ObservableObject {
         return destination.subfolder.isEmpty
             ? "//\(destination.host)/\(destination.share)"
             : "//\(destination.host)/\(destination.share)/\(destination.subfolder)"
+    }
+
+    func savedPath(for summary: DestinationSummary) -> String {
+        summary.displayPath
     }
 
     func testConnection() async {
@@ -210,10 +216,14 @@ final class DestinationSetupViewModel: ObservableObject {
         guard canSave else { return }
         do {
             let destination = try currentForm.destination()
-            try store.save(destination: destination, password: password)
-            savedDestination = destination
-            savedPassword = password
+            let saved = try store.save(
+                destination: destination,
+                password: password,
+                id: editingDestinationID
+            )
+            reloadDestinations(preferredID: saved.id)
             isEditing = false
+            editingDestinationID = nil
             connectionState = .idle
             verifiedForm = nil
             availableShares = []
@@ -237,13 +247,63 @@ final class DestinationSetupViewModel: ObservableObject {
         }
     }
 
+    func testDestination(_ summary: DestinationSummary) async {
+        do {
+            guard let saved = try store.loadAll().first(where: { $0.id == summary.id }) else {
+                connectionState = .failure("That SMB share is no longer saved.")
+                return
+            }
+            connectionState = .testing
+            try await connectionTester.testConnection(
+                to: saved.destination,
+                password: saved.password
+            )
+            connectionState = .success
+        } catch {
+            connectionState = .failure(error.localizedDescription)
+        }
+    }
+
+    func beginAdding() {
+        host = ""
+        share = ""
+        subfolder = ""
+        username = ""
+        password = ""
+        savedDestination = destinations.first?.destination
+        savedPassword = nil
+        editingDestinationID = nil
+        connectionState = .idle
+        verifiedForm = nil
+        availableShares = []
+        resetFolderBrowser()
+        isEditing = true
+    }
+
     func beginEditing() {
-        guard let destination = savedDestination else { return }
-        host = destination.host
-        share = destination.share
-        subfolder = destination.subfolder
-        username = destination.username
-        password = savedPassword ?? ""
+        guard let summary = destinations.first else { return }
+        beginEditing(summary)
+    }
+
+    func beginEditing(_ summary: DestinationSummary) {
+        do {
+            guard let saved = try store.loadAll().first(where: { $0.id == summary.id }) else {
+                connectionState = .failure("That SMB share is no longer saved.")
+                return
+            }
+            let destination = saved.destination
+            host = destination.host
+            share = destination.share
+            subfolder = destination.subfolder
+            username = destination.username
+            password = saved.password
+            savedDestination = destination
+            savedPassword = saved.password
+            editingDestinationID = saved.id
+        } catch {
+            connectionState = .failure(error.localizedDescription)
+            return
+        }
         connectionState = .idle
         verifiedForm = nil
         availableShares = []
@@ -253,6 +313,8 @@ final class DestinationSetupViewModel: ObservableObject {
 
     func cancelEditing() {
         isEditing = false
+        editingDestinationID = nil
+        reloadDestinations()
         connectionState = .idle
         verifiedForm = nil
         availableShares = []
@@ -260,16 +322,16 @@ final class DestinationSetupViewModel: ObservableObject {
     }
 
     func removeDestination() {
+        guard let id = editingDestinationID ?? destinations.first?.id else { return }
+        removeDestination(id)
+    }
+
+    func removeDestination(_ id: UUID) {
         do {
-            try store.remove()
-            savedDestination = nil
-            savedPassword = nil
-            host = ""
-            share = ""
-            subfolder = ""
-            username = ""
-            password = ""
+            try store.remove(id: id)
+            reloadDestinations()
             isEditing = false
+            editingDestinationID = nil
             connectionState = .idle
             verifiedForm = nil
             availableShares = []
@@ -280,11 +342,22 @@ final class DestinationSetupViewModel: ObservableObject {
     }
 
     private func loadSavedDestination() {
+        reloadDestinations()
+    }
+
+    private func reloadDestinations(preferredID: UUID? = nil) {
         do {
-            guard let saved = try store.load() else { return }
-            savedDestination = saved.destination
-            savedPassword = saved.password
+            let saved = try store.loadAll()
+            destinations = saved.map(\.summary)
+            let current = preferredID.flatMap { id in
+                saved.first(where: { $0.id == id })
+            } ?? saved.first
+            savedDestination = current?.destination
+            savedPassword = current?.password
         } catch {
+            destinations = []
+            savedDestination = nil
+            savedPassword = nil
             connectionState = .failure(error.localizedDescription)
         }
     }

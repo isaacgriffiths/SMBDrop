@@ -289,4 +289,53 @@ final class TransferOutboxTests: XCTestCase {
         let persisted = try await outbox.transfers()
         XCTAssertEqual(persisted.first?.filename, " Report final .pdf ")
     }
+
+    func testDestinationClaimOnlyReturnsFilesChosenForThatShare() async throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("SMBDropTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        let firstURL = rootURL.appendingPathComponent("first.txt")
+        let secondURL = rootURL.appendingPathComponent("second.txt")
+        try Data("first".utf8).write(to: firstURL)
+        try Data("second".utf8).write(to: secondURL)
+        let firstDestinationID = UUID()
+        let secondDestinationID = UUID()
+        let outbox = TransferOutbox(rootURL: rootURL.appendingPathComponent("Outbox"))
+
+        _ = try await outbox.enqueueFile(
+            at: firstURL,
+            filename: "first.txt",
+            destinationID: firstDestinationID
+        )
+        let second = try await outbox.enqueueFile(
+            at: secondURL,
+            filename: "second.txt",
+            destinationID: secondDestinationID
+        )
+
+        let work = try XCTUnwrap(try await outbox.claimNext(for: secondDestinationID))
+
+        XCTAssertEqual(work.transfer.id, second.id)
+        XCTAssertEqual(work.transfer.destinationID, secondDestinationID)
+    }
+
+    func testLegacyUnassignedFilesCanBeBoundToAChosenDestination() async throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("SMBDropTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        let sourceURL = rootURL.appendingPathComponent("legacy.txt")
+        try Data("legacy".utf8).write(to: sourceURL)
+        let destinationID = UUID()
+        let outbox = TransferOutbox(rootURL: rootURL.appendingPathComponent("Outbox"))
+        _ = try await outbox.enqueueFile(at: sourceURL, filename: "legacy.txt")
+
+        try await outbox.assignUnassignedTransfers(to: destinationID)
+
+        let work = try XCTUnwrap(try await outbox.claimNext(for: destinationID))
+        XCTAssertEqual(work.transfer.destinationID, destinationID)
+    }
 }

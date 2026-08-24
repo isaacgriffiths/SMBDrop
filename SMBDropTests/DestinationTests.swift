@@ -42,6 +42,62 @@ final class DestinationTests: XCTestCase {
         })
     }
 
+    func testMultipleDestinationsKeepIndependentPasswords() throws {
+        let suiteName = "SMBDropTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let store = DestinationStore(
+            defaults: defaults,
+            passwordVault: MemoryPasswordVault()
+        )
+        let photos = try Destination(
+            host: "photos.local",
+            share: "Camera Roll",
+            subfolder: "Isaac",
+            username: "photo-user"
+        )
+        let documents = try Destination(
+            host: "files.local",
+            share: "Documents",
+            subfolder: "iPhone",
+            username: "file-user"
+        )
+
+        let first = try store.save(destination: photos, password: "photo-password")
+        let second = try store.save(destination: documents, password: "file-password")
+
+        XCTAssertNotEqual(first.id, second.id)
+        XCTAssertEqual(try store.loadAll(), [first, second])
+
+        try store.remove(id: first.id)
+        XCTAssertEqual(try store.loadAll(), [second])
+    }
+
+    func testLegacySingleDestinationMigratesWithoutLosingItsPassword() throws {
+        let suiteName = "SMBDropTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let vault = MemoryPasswordVault()
+        let destination = try Destination(
+            host: "legacy.local",
+            share: "Photos",
+            subfolder: "",
+            username: "isaac"
+        )
+        defaults.set(try JSONEncoder().encode(destination), forKey: "savedDestination")
+        try vault.savePassword("legacy-password")
+        let store = DestinationStore(defaults: defaults, passwordVault: vault)
+
+        let migrated = try XCTUnwrap(store.loadAll().first)
+
+        XCTAssertEqual(migrated.destination, destination)
+        XCTAssertEqual(migrated.password, "legacy-password")
+        XCTAssertNil(defaults.data(forKey: "savedDestination"))
+        XCTAssertEqual(try store.loadAll(), [migrated])
+    }
+
     func testShareNameWithEdgeSlashesNormalisesToBareName() throws {
         // PhotoSync displays the share as "/share"; migrating users type it verbatim.
         let leading = try Destination(

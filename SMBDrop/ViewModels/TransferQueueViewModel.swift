@@ -6,10 +6,13 @@ final class TransferQueueViewModel: ObservableObject {
     @Published private(set) var transfers: [Transfer] = []
     @Published private(set) var isDraining = false
     @Published private(set) var message: String?
+    @Published private(set) var activeBatchID: UUID?
+    @Published private(set) var destinationNames: [UUID: String] = [:]
 
     private let destinationStore: DestinationStore
     private let worker: SMBTransferWorker
     private let outboxFactory: () throws -> TransferOutbox
+    private var resumeRequested = false
 
     init(
         destinationStore: DestinationStore = DestinationStore(),
@@ -21,35 +24,129 @@ final class TransferQueueViewModel: ObservableObject {
         self.outboxFactory = outboxFactory
     }
 
-    func resume() async {
-        guard !isDraining else { return }
+    var activeTransfers: [Transfer] {
+        if let activeBatchID {
+            let batch = transfers.filter { $0.batchID == activeBatchID }
+            if !batch.isEmpty { return batch }
+        }
+
+        let unfinished = transfers.filter {
+            $0.status == .queued || $0.status == .uploading || $0.status == .failed
+        }
+        if let batchID = unfinished.reversed().compactMap(\.batchID).first {
+            return transfers.filter { $0.batchID == batchID }
+        }
+        return unfinished
+    }
+
+    var activeProgress: TransferBatchProgress? {
+        let activeTransfers = activeTransfers
+        return activeTransfers.isEmpty ? nil : TransferBatchProgress(transfers: activeTransfers)
+    }
+
+    func track(batchID: UUID) {
+        activeBatchID = batchID
+        message = nil
+    }
+
+    @discardableResult
+    func enqueueFile(
+        at sourceURL: URL,
+        filename: String,
+        destinationID: UUID,
+        batchID: UUID,
+        moveSource: Bool = false
+    ) async throws -> Transfer {
+        let outbox = try outboxFactory()
+        let transfer = try await outbox.enqueueFile(
+            at: sourceURL,
+            filename: filename,
+            destinationID: destinationID,
+            batchID: batchID,
+            moveSource: moveSource
+        )
+        replace(transfer)
+        return transfer
+    }
+
+    func refresh() async {
         do {
             let outbox = try outboxFactory()
             transfers = try await outbox.transfers()
-            guard transfers.contains(where: { $0.status == .queued || $0.status == .uploading }) else {
-                return
+            updateDestinationNames()
+        } catch {
+            message = error.localizedDescription
+        }
+    }
+
+    func resume() async {
+        guard !isDraining else {
+            resumeRequested = true
+            return
+        }
+        do {
+            let outbox = try outboxFactory()
+            let destinations = try destinationStore.loadAll()
+            destinationNames = Dictionary(
+                uniqueKeysWithValues: destinations.map { ($0.id, $0.summary.displayName) }
+            )
+
+            // The old app had exactly one destination and left queue items
+            // unassigned. Bind those items once before any destination worker runs.
+            if let legacyDestination = destinations.first {
+                try await outbox.assignUnassignedTransfers(to: legacyDestination.id)
             }
-            guard let savedDestination = try destinationStore.load() else {
-                message = "Save an SMB destination to upload the queued items."
+            transfers = try await outbox.transfers()
+
+            let unfinished = transfers.filter {
+                $0.status == .queued || $0.status == .uploading
+            }
+            guard !unfinished.isEmpty else { return }
+            guard !destinations.isEmpty else {
+                message = "Add an SMB share in Settings to upload the queued items."
                 return
             }
 
+            let knownIDs = Set(destinations.map(\.id))
+            if unfinished.contains(where: { transfer in
+                guard let destinationID = transfer.destinationID else { return true }
+                return !knownIDs.contains(destinationID)
+            }) {
+                message = "A queued item belongs to an SMB share that is no longer saved."
+            } else {
+                message = nil
+            }
+
             isDraining = true
-            message = nil
-            let result = await worker.drain(
-                outbox: outbox,
-                destination: savedDestination.destination,
-                password: savedDestination.password
-            ) { [weak self] updatedTransfer in
-                Task { @MainActor in
-                    self?.replace(updatedTransfer)
+            defer {
+                isDraining = false
+                if resumeRequested {
+                    resumeRequested = false
+                    Task { await self.resume() }
                 }
             }
-            transfers = try await outbox.transfers()
-            if let failed = result.failed {
-                message = failed.errorMessage
+
+            for savedDestination in destinations {
+                guard transfers.contains(where: {
+                    $0.destinationID == savedDestination.id
+                        && ($0.status == .queued || $0.status == .uploading)
+                }) else { continue }
+
+                let result = await worker.drain(
+                    outbox: outbox,
+                    destination: savedDestination.destination,
+                    password: savedDestination.password,
+                    destinationID: savedDestination.id
+                ) { [weak self] updatedTransfer in
+                    Task { @MainActor in
+                        self?.replace(updatedTransfer)
+                    }
+                }
+                transfers = try await outbox.transfers()
+                if let failed = result.failed {
+                    message = failed.errorMessage
+                }
             }
-            isDraining = false
         } catch {
             message = error.localizedDescription
             isDraining = false
@@ -60,6 +157,7 @@ final class TransferQueueViewModel: ObservableObject {
         do {
             let outbox = try outboxFactory()
             let retried = try await outbox.retry(id)
+            activeBatchID = retried.batchID
             replace(retried)
             await resume()
         } catch {
@@ -75,6 +173,17 @@ final class TransferQueueViewModel: ObservableObject {
         } catch {
             message = error.localizedDescription
         }
+    }
+
+    func destinationName(for transfer: Transfer) -> String? {
+        transfer.destinationID.flatMap { destinationNames[$0] }
+    }
+
+    private func updateDestinationNames() {
+        guard let destinations = try? destinationStore.loadAll() else { return }
+        destinationNames = Dictionary(
+            uniqueKeysWithValues: destinations.map { ($0.id, $0.summary.displayName) }
+        )
     }
 
     private func replace(_ transfer: Transfer) {

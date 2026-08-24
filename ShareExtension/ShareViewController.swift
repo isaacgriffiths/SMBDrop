@@ -1,21 +1,24 @@
 import UIKit
 
+@MainActor
 final class ShareViewController: UIViewController {
     private let icon = UIImageView(
-        image: UIImage(systemName: "dot.radiowaves.left.and.right")
+        image: UIImage(systemName: "externaldrive.fill.badge.wifi")
     )
     private let titleLabel = UILabel()
     private let statusLabel = UILabel()
+    private let destinationButton = UIButton(configuration: .bordered())
     private let progressView = UIProgressView(progressViewStyle: .default)
-    private let doneButton = UIButton(configuration: .borderedProminent())
+    private let actionButton = UIButton(configuration: .borderedProminent())
+    private var destinations: [SavedDestination] = []
+    private var selectedDestination: SavedDestination?
+    private var transferSnapshots: [UUID: Transfer] = [:]
     private var workTask: Task<Void, Never>?
 
     override func viewDidLoad() {
         super.viewDidLoad()
         configureView()
-        workTask = Task { [weak self] in
-            await self?.stageAndUploadItems()
-        }
+        loadDestinations()
     }
 
     deinit {
@@ -27,30 +30,44 @@ final class ShareViewController: UIViewController {
 
         icon.preferredSymbolConfiguration = .init(pointSize: 40, weight: .medium)
         icon.tintColor = view.tintColor
+        icon.setContentHuggingPriority(.required, for: .vertical)
 
-        titleLabel.text = "SMBDrop"
-        titleLabel.font = .preferredFont(forTextStyle: .title1)
+        titleLabel.text = "Choose an SMB Share"
+        titleLabel.font = .preferredFont(forTextStyle: .title2)
+        titleLabel.textAlignment = .center
 
-        statusLabel.text = "Preparing \(itemCount) item\(itemCount == 1 ? "" : "s")…"
+        statusLabel.text = "Send \(itemCount) item\(itemCount == 1 ? "" : "s") to:"
         statusLabel.font = .preferredFont(forTextStyle: .footnote)
         statusLabel.textColor = .secondaryLabel
         statusLabel.numberOfLines = 0
         statusLabel.textAlignment = .center
 
-        progressView.progress = 0
-        progressView.widthAnchor.constraint(equalToConstant: 220).isActive = true
+        destinationButton.showsMenuAsPrimaryAction = true
+        destinationButton.accessibilityLabel = "SMB share destination"
+        destinationButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 220).isActive = true
 
-        doneButton.configuration?.title = "Please Wait"
-        doneButton.isEnabled = false
-        doneButton.addAction(UIAction { [weak self] _ in
-            self?.extensionContext?.completeRequest(returningItems: nil)
+        progressView.progress = 0
+        progressView.isHidden = true
+        progressView.widthAnchor.constraint(equalToConstant: 260).isActive = true
+
+        actionButton.configuration?.title = "Send Items"
+        actionButton.isEnabled = false
+        actionButton.addAction(UIAction { [weak self] _ in
+            self?.startSelectedUpload()
         }, for: .touchUpInside)
 
         let stack = UIStackView(
-            arrangedSubviews: [icon, titleLabel, statusLabel, progressView, doneButton]
+            arrangedSubviews: [
+                icon,
+                titleLabel,
+                statusLabel,
+                destinationButton,
+                progressView,
+                actionButton,
+            ]
         )
         stack.axis = .vertical
-        stack.spacing = 12
+        stack.spacing = 14
         stack.alignment = .center
         stack.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(stack)
@@ -62,17 +79,72 @@ final class ShareViewController: UIViewController {
         ])
     }
 
-    private func stageAndUploadItems() async {
+    private func loadDestinations() {
+        do {
+            destinations = try DestinationStore().loadAll()
+            guard let first = destinations.first else {
+                showFailure("Open SMBDrop, go to Settings, and add an SMB share first.")
+                return
+            }
+            selectDestination(first)
+            destinationButton.menu = UIMenu(
+                title: "Choose an SMB Share",
+                children: destinations.map { destination in
+                    UIAction(
+                        title: destination.summary.displayName,
+                        subtitle: destination.summary.displayPath,
+                        image: UIImage(systemName: "externaldrive.fill"),
+                        state: destination.id == selectedDestination?.id ? .on : .off
+                    ) { [weak self] _ in
+                        Task { @MainActor in self?.selectDestination(destination) }
+                    }
+                }
+            )
+            actionButton.isEnabled = !itemProviders.isEmpty
+        } catch {
+            showFailure(error.localizedDescription)
+        }
+    }
+
+    private func selectDestination(_ destination: SavedDestination) {
+        selectedDestination = destination
+        destinationButton.configuration?.title = destination.summary.displayName
+        destinationButton.configuration?.subtitle = destination.summary.displayPath
+        destinationButton.menu = UIMenu(
+            title: "Choose an SMB Share",
+            children: destinations.map { candidate in
+                UIAction(
+                    title: candidate.summary.displayName,
+                    subtitle: candidate.summary.displayPath,
+                    image: UIImage(systemName: "externaldrive.fill"),
+                    state: candidate.id == destination.id ? .on : .off
+                ) { [weak self] _ in
+                    Task { @MainActor in self?.selectDestination(candidate) }
+                }
+            }
+        )
+    }
+
+    private func startSelectedUpload() {
+        guard workTask == nil, let selectedDestination else { return }
+        destinationButton.isEnabled = false
+        actionButton.isEnabled = false
+        actionButton.configuration?.title = "Please Wait"
+        progressView.isHidden = false
+        workTask = Task { [weak self] in
+            await self?.stageAndUploadItems(to: selectedDestination)
+        }
+    }
+
+    private func stageAndUploadItems(to savedDestination: SavedDestination) async {
         do {
             let providers = itemProviders
             guard !providers.isEmpty else {
                 throw ShareExtensionError.noItems
             }
-            guard let savedDestination = try DestinationStore().load() else {
-                throw ShareExtensionError.destinationMissing
-            }
             let outbox = try TransferOutbox.shared()
             let loader = ShareItemProviderLoader()
+            let batchID = UUID()
             var stagedIDs = Set<UUID>()
 
             for (index, provider) in providers.enumerated() {
@@ -84,9 +156,12 @@ final class ShareViewController: UIViewController {
                     let transfer = try await outbox.enqueueFile(
                         at: item.temporaryURL,
                         filename: item.filename,
+                        destinationID: savedDestination.id,
+                        batchID: batchID,
                         moveSource: true
                     )
                     stagedIDs.insert(transfer.id)
+                    transferSnapshots[transfer.id] = transfer
                     try? FileManager.default.removeItem(
                         at: item.temporaryURL.deletingLastPathComponent()
                     )
@@ -98,13 +173,15 @@ final class ShareViewController: UIViewController {
                 }
             }
 
-            statusLabel.text = "Uploading to \(savedDestination.destination.share)…"
+            statusLabel.text = "Uploading 1 of \(stagedIDs.count) to \(savedDestination.summary.displayName)…"
             progressView.progress = 0
             let stagedTransferIDs = stagedIDs
             let result = await SMBTransferWorker().drain(
                 outbox: outbox,
                 destination: savedDestination.destination,
-                password: savedDestination.password
+                password: savedDestination.password,
+                destinationID: savedDestination.id,
+                transferIDs: stagedTransferIDs
             ) { [weak self] transfer in
                 Task { @MainActor in
                     guard let self, stagedTransferIDs.contains(transfer.id) else { return }
@@ -118,7 +195,8 @@ final class ShareViewController: UIViewController {
                 showFailure(
                     "\(failed.filename) could not upload. \(failed.errorMessage ?? "Open SMBDrop to retry it.")"
                 )
-            } else if stagedTransfers.allSatisfy({ $0.status == .completed }) {
+            } else if !stagedTransfers.isEmpty,
+                      stagedTransfers.allSatisfy({ $0.status == .completed }) {
                 showSuccess(count: stagedTransfers.count)
             } else {
                 showQueued(count: stagedTransfers.count)
@@ -131,34 +209,49 @@ final class ShareViewController: UIViewController {
     }
 
     private func showProgress(_ transfer: Transfer) {
-        let total = max(1, transfer.byteCount)
-        progressView.progress = Float(transfer.bytesTransferred) / Float(total)
+        transferSnapshots[transfer.id] = transfer
+        let overall = TransferBatchProgress(transfers: Array(transferSnapshots.values))
+        progressView.progress = Float(overall.fractionCompleted)
+        let percent = Int(overall.fractionCompleted * 100)
+
         switch transfer.status {
         case .queued:
-            statusLabel.text = "Queued \(transfer.filename)…"
+            statusLabel.text = "Item \(overall.countText) · \(percent)% overall\nQueued \(transfer.filename)…"
         case .uploading:
-            statusLabel.text = "Uploading \(transfer.filename)…"
+            statusLabel.text = "Item \(overall.countText) · \(percent)% overall\nUploading \(transfer.filename)…"
         case .failed:
-            statusLabel.text = "Upload failed for \(transfer.filename)."
+            statusLabel.text = "Item \(overall.countText) · \(percent)% overall\nUpload failed for \(transfer.filename)."
         case .completed:
-            statusLabel.text = "Uploaded \(transfer.remoteFilename ?? transfer.filename)."
+            let count = overall.isComplete ? overall.totalCount : overall.currentItemNumber
+            statusLabel.text = "Item \(count) of \(overall.totalCount) · \(percent)% overall"
         }
     }
 
     private func showSuccess(count: Int) {
         icon.image = UIImage(systemName: "checkmark.circle.fill")
         icon.tintColor = .systemGreen
-        statusLabel.text = "Uploaded \(count) item\(count == 1 ? "" : "s") successfully."
+        statusLabel.text = "Uploaded \(count) of \(count) items successfully."
+        statusLabel.textColor = .secondaryLabel
         progressView.progress = 1
-        doneButton.configuration?.title = "Done"
-        doneButton.isEnabled = true
+        destinationButton.isHidden = true
+        actionButton.configuration?.title = "Done"
+        actionButton.isEnabled = true
+        actionButton.removeTarget(nil, action: nil, for: .allEvents)
+        actionButton.addAction(UIAction { [weak self] _ in
+            self?.extensionContext?.completeRequest(returningItems: nil)
+        }, for: .touchUpInside)
     }
 
     private func showQueued(count: Int) {
         icon.image = UIImage(systemName: "clock.arrow.circlepath")
         statusLabel.text = "Queued \(count) item\(count == 1 ? "" : "s"). Open SMBDrop to finish uploading."
-        doneButton.configuration?.title = "Done"
-        doneButton.isEnabled = true
+        destinationButton.isHidden = true
+        actionButton.configuration?.title = "Done"
+        actionButton.isEnabled = true
+        actionButton.removeTarget(nil, action: nil, for: .allEvents)
+        actionButton.addAction(UIAction { [weak self] _ in
+            self?.extensionContext?.completeRequest(returningItems: nil)
+        }, for: .touchUpInside)
     }
 
     private func showFailure(_ message: String) {
@@ -166,8 +259,14 @@ final class ShareViewController: UIViewController {
         icon.tintColor = .systemRed
         statusLabel.text = message
         statusLabel.textColor = .systemRed
-        doneButton.configuration?.title = "Done"
-        doneButton.isEnabled = true
+        progressView.isHidden = true
+        destinationButton.isHidden = destinations.isEmpty
+        actionButton.configuration?.title = "Done"
+        actionButton.isEnabled = true
+        actionButton.removeTarget(nil, action: nil, for: .allEvents)
+        actionButton.addAction(UIAction { [weak self] _ in
+            self?.extensionContext?.completeRequest(returningItems: nil)
+        }, for: .touchUpInside)
     }
 
     private var itemProviders: [NSItemProvider] {
@@ -181,15 +280,9 @@ final class ShareViewController: UIViewController {
 }
 
 private enum ShareExtensionError: LocalizedError {
-    case destinationMissing
     case noItems
 
     var errorDescription: String? {
-        switch self {
-        case .destinationMissing:
-            return "Open SMBDrop and save an SMB destination before sharing."
-        case .noItems:
-            return "Photos did not pass any items to SMBDrop."
-        }
+        "The sharing app did not pass any photos, videos, or files to SMBDrop."
     }
 }

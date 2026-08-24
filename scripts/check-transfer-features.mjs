@@ -1,7 +1,11 @@
 import { readFileSync } from "node:fs";
 
 const shareController = readFileSync("ShareExtension/ShareViewController.swift", "utf8");
-const setupView = readFileSync("SMBDrop/Views/ContentView.swift", "utf8");
+const contentView = readFileSync("SMBDrop/Views/ContentView.swift", "utf8");
+const setupView = readFileSync("SMBDrop/Views/DestinationEditorView.swift", "utf8");
+const photosView = readFileSync("SMBDrop/Views/PhotoLibraryView.swift", "utf8");
+const filesView = readFileSync("SMBDrop/Views/FilesBrowserView.swift", "utf8");
+const settingsView = readFileSync("SMBDrop/Views/SettingsView.swift", "utf8");
 const setupViewModel = readFileSync(
   "SMBDrop/ViewModels/DestinationSetupViewModel.swift",
   "utf8",
@@ -13,6 +17,8 @@ const providerLoader = readFileSync(
 const filenameResolver = readFileSync("Shared/ShareItemFilename.swift", "utf8");
 const fileStager = readFileSync("Shared/ShareItemFileStager.swift", "utf8");
 const uploader = readFileSync("Shared/Transfers/SMBTransferWorker.swift", "utf8");
+const destinationStore = readFileSync("Shared/DestinationStore.swift", "utf8");
+const outbox = readFileSync("Shared/Transfers/TransferOutbox.swift", "utf8");
 const extensionInfo = readFileSync("ShareExtension/Info.plist", "utf8");
 
 if (/uploading arrives in the next build/i.test(shareController)) {
@@ -20,6 +26,24 @@ if (/uploading arrives in the next build/i.test(shareController)) {
 }
 if (!/Browse Folders/.test(setupView)) {
   throw new Error("Destination setup does not expose the folder browser.");
+}
+if (!/PhotoLibraryView/.test(contentView) || !/FilesBrowserView/.test(contentView) || !/SettingsView/.test(contentView)) {
+  throw new Error("The main app does not expose Photos, Files, and Settings tabs.");
+}
+if (!/LazyVGrid/.test(photosView) || !/selectedIDs/.test(photosView)) {
+  throw new Error("The Photos tab is not a selectable photo-library grid.");
+}
+if (!/fileImporter/.test(filesView) || !/allowsMultipleSelection: true/.test(filesView)) {
+  throw new Error("The Files tab does not use the native multi-select document browser.");
+}
+if (!/Add SMB Share/.test(settingsView) || !/ForEach\(viewModel\.destinations\)/.test(settingsView)) {
+  throw new Error("Settings does not list and add multiple SMB shares.");
+}
+if (!/loadAll\(\)/.test(destinationStore) || !/savedDestinations\.v2/.test(destinationStore)) {
+  throw new Error("Destination storage does not support multi-share migration.");
+}
+if (!/destinationID/.test(outbox) || !/batchID/.test(outbox) || !/claimNext\(/.test(outbox)) {
+  throw new Error("Queued transfers are not bound to a destination and batch.");
 }
 if (!/Use & Save/.test(setupView) || !/useBrowsedFolder\(\) async/.test(setupViewModel)) {
   throw new Error("A browsed folder is not verified and saved before the picker closes.");
@@ -39,6 +63,9 @@ if (!/creationDate/.test(fileStager) || !/modificationDate/.test(fileStager)) {
 if (!/enqueueFile/.test(shareController) || !/SMBTransferWorker/.test(shareController)) {
   throw new Error("The share extension does not stage and drain shared items.");
 }
+if (!/Choose an SMB Share/.test(shareController) || !/TransferBatchProgress/.test(shareController)) {
+  throw new Error("The share extension does not choose a destination and show aggregate progress.");
+}
 if (!/uploadItem/.test(uploader) || !/moveItem/.test(uploader)) {
   throw new Error("The SMB uploader does not stream and publish staged files.");
 }
@@ -49,4 +76,4 @@ if (!/NSLocalNetworkUsageDescription/.test(extensionInfo)) {
   throw new Error("The share extension is missing its local-network privacy description.");
 }
 
-console.log("Folder browsing and share-sheet SMB uploads are wired end to end.");
+console.log("Multi-share Photos, Files, and share-sheet uploads are wired end to end.");

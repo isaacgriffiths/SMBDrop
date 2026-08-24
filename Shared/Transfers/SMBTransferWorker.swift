@@ -170,12 +170,17 @@ struct SMBTransferWorker {
         outbox: TransferOutbox,
         destination: Destination,
         password: String,
+        destinationID: UUID? = nil,
+        transferIDs: Set<UUID>? = nil,
         progress: (@Sendable (Transfer) -> Void)? = nil
     ) async -> TransferDrainResult {
         var completed: [Transfer] = []
 
         do {
-            while let work = try await outbox.claimNext() {
+            while let work = try await outbox.claimNext(
+                for: destinationID,
+                matching: transferIDs
+            ) {
                 let (stream, continuation) = AsyncStream<Int64>.makeStream()
                 let progressTask = Task {
                     for await bytes in stream {

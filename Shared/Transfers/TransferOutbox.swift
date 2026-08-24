@@ -15,6 +15,8 @@ struct Transfer: Codable, Equatable, Identifiable, Sendable {
     let createdAt: Date
     let sourceCreationDate: Date?
     let sourceModificationDate: Date?
+    var destinationID: UUID?
+    var batchID: UUID?
     var updatedAt: Date
     var status: Status
     var bytesTransferred: Int64
@@ -68,6 +70,8 @@ actor TransferOutbox {
     func enqueueFile(
         at sourceURL: URL,
         filename: String,
+        destinationID: UUID? = nil,
+        batchID: UUID? = nil,
         moveSource: Bool = false
     ) throws -> Transfer {
         let filename = try canonicalFilename(filename)
@@ -95,6 +99,8 @@ actor TransferOutbox {
                 createdAt: currentDate,
                 sourceCreationDate: resourceValues.creationDate,
                 sourceModificationDate: sourceModificationDate,
+                destinationID: destinationID,
+                batchID: batchID,
                 updatedAt: currentDate,
                 status: .queued,
                 bytesTransferred: 0,
@@ -126,7 +132,10 @@ actor TransferOutbox {
         }
     }
 
-    func claimNext() throws -> TransferWork? {
+    func claimNext(
+        for destinationID: UUID? = nil,
+        matching transferIDs: Set<UUID>? = nil
+    ) throws -> TransferWork? {
         try withExclusiveLock {
             let currentDate = now()
             let storedTransfers = try transfersUnlocked()
@@ -139,6 +148,8 @@ actor TransferOutbox {
             }
 
             for storedTransfer in storedTransfers {
+                guard storedTransfer.destinationID == destinationID else { continue }
+                if let transferIDs, !transferIDs.contains(storedTransfer.id) { continue }
                 var transfer = storedTransfer
                 let existingClaim = try readClaim(for: transfer.id)
 
@@ -186,6 +197,20 @@ actor TransferOutbox {
             }
 
             return nil
+        }
+    }
+
+    /// Gives queues created by the original single-destination app an explicit
+    /// destination before any multi-share worker is allowed to claim them.
+    func assignUnassignedTransfers(to destinationID: UUID) throws {
+        try withExclusiveLock {
+            for storedTransfer in try transfersUnlocked()
+            where storedTransfer.destinationID == nil {
+                var transfer = storedTransfer
+                transfer.destinationID = destinationID
+                transfer.updatedAt = now()
+                try write(transfer)
+            }
         }
     }
 
