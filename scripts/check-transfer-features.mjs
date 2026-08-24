@@ -51,6 +51,9 @@ if (/destinationID: UUID\? = nil/.test(outbox) || /batchID: UUID\? = nil/.test(o
 if (!/retireDestination/.test(outbox) || !/destinationRemoved/.test(outbox) || !/reconcileRetiredDestinations/.test(outbox)) {
   throw new Error("Destination removal is not coordinated with extension enqueueing.");
 }
+if (!/ownerSessionID/.test(outbox) || !/SMBDropProcess\.sessionID/.test(outbox)) {
+  throw new Error("Destination retirement cannot distinguish an active removal from crash recovery.");
+}
 if (!/Use & Save/.test(setupView) || !/useBrowsedFolder\(\) async/.test(setupViewModel)) {
   throw new Error("A browsed folder is not verified and saved before the picker closes.");
 }

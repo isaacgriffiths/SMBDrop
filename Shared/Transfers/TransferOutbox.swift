@@ -91,7 +91,7 @@ actor TransferOutbox {
         }
 
         return try withExclusiveLock {
-            guard !readRetiredDestinationIDs().contains(destinationID) else {
+            guard readRetiredDestinations()[destinationID] == nil else {
                 throw TransferOutboxError.destinationRemoved
             }
             let currentDate = now()
@@ -227,37 +227,45 @@ actor TransferOutbox {
 
     /// Atomically prevents future extension enqueues for this destination.
     /// Returns false while unfinished work still belongs to the destination.
-    func retireDestination(_ destinationID: UUID) throws -> Bool {
+    func retireDestination(
+        _ destinationID: UUID,
+        ownerSessionID: UUID = SMBDropProcess.sessionID
+    ) throws -> Bool {
         try withExclusiveLock {
             let hasUnfinishedTransfers = try transfersUnlocked().contains {
                 $0.destinationID == destinationID && $0.status != .completed
             }
             guard !hasUnfinishedTransfers else { return false }
-            var retiredIDs = readRetiredDestinationIDs()
-            retiredIDs.insert(destinationID)
-            try writeRetiredDestinationIDs(retiredIDs)
+            var retiredDestinations = readRetiredDestinations()
+            retiredDestinations[destinationID] = ownerSessionID
+            try writeRetiredDestinations(retiredDestinations)
             return true
         }
     }
 
     func restoreDestination(_ destinationID: UUID) throws {
         try withExclusiveLock {
-            var retiredIDs = readRetiredDestinationIDs()
-            retiredIDs.remove(destinationID)
-            try writeRetiredDestinationIDs(retiredIDs)
+            var retiredDestinations = readRetiredDestinations()
+            retiredDestinations.removeValue(forKey: destinationID)
+            try writeRetiredDestinations(retiredDestinations)
         }
     }
 
     /// Repairs a process termination between writing a retirement tombstone
-    /// and removing the matching saved destination. A destination that still
-    /// exists is authoritative and must remain usable.
-    func reconcileRetiredDestinations(with activeDestinationIDs: Set<UUID>) throws {
+    /// and removing the matching saved destination. Tombstones owned by this
+    /// process may represent an active removal and are never reconciled away.
+    func reconcileRetiredDestinations(
+        with activeDestinationIDs: Set<UUID>,
+        currentSessionID: UUID = SMBDropProcess.sessionID
+    ) throws {
         try withExclusiveLock {
-            var retiredIDs = readRetiredDestinationIDs()
-            let originalIDs = retiredIDs
-            retiredIDs.subtract(activeDestinationIDs)
-            if retiredIDs != originalIDs {
-                try writeRetiredDestinationIDs(retiredIDs)
+            var retiredDestinations = readRetiredDestinations()
+            let originalDestinations = retiredDestinations
+            retiredDestinations = retiredDestinations.filter { destinationID, ownerSessionID in
+                !activeDestinationIDs.contains(destinationID) || ownerSessionID == currentSessionID
+            }
+            if retiredDestinations != originalDestinations {
+                try writeRetiredDestinations(retiredDestinations)
             }
         }
     }
@@ -424,16 +432,29 @@ actor TransferOutbox {
         rootURL.appendingPathComponent(".retired-destinations.json", isDirectory: false)
     }
 
-    private func readRetiredDestinationIDs() -> Set<UUID> {
-        guard let data = try? Data(contentsOf: retiredDestinationsURL),
-              let ids = try? decoder.decode(Set<UUID>.self, from: data) else {
-            return []
+    private func readRetiredDestinations() -> [UUID: UUID] {
+        guard let data = try? Data(contentsOf: retiredDestinationsURL) else {
+            return [:]
         }
-        return ids
+        if let destinations = try? decoder.decode([UUID: UUID].self, from: data) {
+            return destinations
+        }
+        // Compatibility with the first tombstone format. Treat those entries
+        // as belonging to an earlier process so startup reconciliation can heal them.
+        guard let destinationIDs = try? decoder.decode(Set<UUID>.self, from: data) else {
+            return [:]
+        }
+        let previousSessionID = UUID()
+        return Dictionary(uniqueKeysWithValues: destinationIDs.map { ($0, previousSessionID) })
     }
 
-    private func writeRetiredDestinationIDs(_ ids: Set<UUID>) throws {
-        try encoder.encode(ids).write(to: retiredDestinationsURL, options: .atomic)
+    private func writeRetiredDestinations(_ destinations: [UUID: UUID]) throws {
+        if destinations.isEmpty {
+            guard fileManager.fileExists(atPath: retiredDestinationsURL.path) else { return }
+            try fileManager.removeItem(at: retiredDestinationsURL)
+            return
+        }
+        try encoder.encode(destinations).write(to: retiredDestinationsURL, options: .atomic)
     }
 
     private func write(_ transfer: Transfer) throws {

@@ -429,10 +429,18 @@ final class TransferOutboxTests: XCTestCase {
         let sourceURL = rootURL.appendingPathComponent("recovered.txt")
         try Data("recovered".utf8).write(to: sourceURL)
         let outbox = TransferOutbox(rootURL: rootURL.appendingPathComponent("Outbox"))
-        let retired = try await outbox.retireDestination(destinationID)
+        let previousSessionID = UUID()
+        let currentSessionID = UUID()
+        let retired = try await outbox.retireDestination(
+            destinationID,
+            ownerSessionID: previousSessionID
+        )
         XCTAssertTrue(retired)
 
-        try await outbox.reconcileRetiredDestinations(with: Set([destinationID]))
+        try await outbox.reconcileRetiredDestinations(
+            with: Set([destinationID]),
+            currentSessionID: currentSessionID
+        )
         let transfer = try await outbox.enqueueFile(
             at: sourceURL,
             filename: "recovered.txt",
@@ -441,6 +449,39 @@ final class TransferOutboxTests: XCTestCase {
         )
 
         XCTAssertEqual(transfer.destinationID, destinationID)
+    }
+
+    func testCurrentRemovalCannotBeReconciledByConcurrentResume() async throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("SMBDropTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+        let sourceURL = rootURL.appendingPathComponent("late.txt")
+        try Data("late".utf8).write(to: sourceURL)
+        let outbox = TransferOutbox(rootURL: rootURL.appendingPathComponent("Outbox"))
+        let currentSessionID = UUID()
+        let retired = try await outbox.retireDestination(
+            destinationID,
+            ownerSessionID: currentSessionID
+        )
+        XCTAssertTrue(retired)
+
+        try await outbox.reconcileRetiredDestinations(
+            with: Set([destinationID]),
+            currentSessionID: currentSessionID
+        )
+
+        do {
+            _ = try await outbox.enqueueFile(
+                at: sourceURL,
+                filename: "late.txt",
+                destinationID: destinationID,
+                batchID: batchID
+            )
+            XCTFail("A concurrent resume must not reopen a destination being removed")
+        } catch TransferOutboxError.destinationRemoved {
+            // Expected.
+        }
     }
 
     private func stageLegacyTransfer(
