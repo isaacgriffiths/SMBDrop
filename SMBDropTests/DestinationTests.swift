@@ -42,6 +42,27 @@ final class DestinationTests: XCTestCase {
         })
     }
 
+    func testShareNameWithEdgeSlashesNormalisesToBareName() throws {
+        // PhotoSync displays the share as "/share"; migrating users type it verbatim.
+        let leading = try Destination(
+            host: "nas.local",
+            share: "/Photos",
+            subfolder: "",
+            username: "isaac"
+        )
+        XCTAssertEqual(leading.share, "Photos")
+
+        let trailing = try Destination(
+            host: "nas.local",
+            share: "Photos/",
+            subfolder: "",
+            username: "isaac"
+        )
+        XCTAssertEqual(trailing.share, "Photos")
+
+        XCTAssertEqual(leading, trailing)
+    }
+
     func testDestinationRejectsUnsafeShareAndSubfolderPaths() throws {
         XCTAssertThrowsError(
             try Destination(
