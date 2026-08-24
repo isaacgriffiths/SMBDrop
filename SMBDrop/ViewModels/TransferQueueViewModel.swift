@@ -356,7 +356,9 @@ private final class LegacyTransferBackgroundAssertion {
         identifier = UIApplication.shared.beginBackgroundTask(
             withName: "Finish SMB transfer"
         ) { [weak self] in
-            self?.end()
+            Task { @MainActor in
+                self?.end()
+            }
         }
     }
 

@@ -115,10 +115,10 @@ struct TransferActivityView: View {
             return "Removing…"
         }
         switch transfer.status {
-        case .queued: "Queued"
-        case .uploading: "Sending"
-        case .failed: "Failed"
-        case .completed: "Uploaded"
+        case .queued: return "Queued"
+        case .uploading: return "Sending"
+        case .failed: return "Failed"
+        case .completed: return "Uploaded"
         }
     }
 }
