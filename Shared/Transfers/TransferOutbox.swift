@@ -107,8 +107,16 @@ actor TransferOutbox {
     func claimNext() throws -> TransferWork? {
         try withExclusiveLock {
             let currentDate = now()
+            let storedTransfers = try transfersUnlocked()
 
-            for storedTransfer in try transfersUnlocked() {
+            for transfer in storedTransfers
+            where transfer.status == .queued || transfer.status == .uploading {
+                if let claim = try readClaim(for: transfer.id), claim.expiresAt > currentDate {
+                    return nil
+                }
+            }
+
+            for storedTransfer in storedTransfers {
                 var transfer = storedTransfer
                 let existingClaim = try readClaim(for: transfer.id)
 
