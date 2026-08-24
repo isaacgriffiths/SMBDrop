@@ -34,7 +34,10 @@ struct Destination: Codable, Equatable, Sendable {
 
     init(host: String, share: String, subfolder: String, username: String) throws {
         let host = host.trimmingCharacters(in: .whitespacesAndNewlines)
+        // PhotoSync displays shares as "/share"; accept edge slashes verbatim.
         let share = share.trimmingCharacters(in: .whitespacesAndNewlines)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+            .trimmingCharacters(in: .whitespacesAndNewlines)
         let username = username.trimmingCharacters(in: .whitespacesAndNewlines)
         let subfolder = subfolder
             .trimmingCharacters(in: .whitespacesAndNewlines)
