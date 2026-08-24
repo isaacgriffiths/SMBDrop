@@ -5,30 +5,54 @@ protocol DestinationConnectionTesting {
     func testConnection(to destination: Destination, password: String) async throws
 }
 
+protocol SMBConnectionSession: AnyObject {
+    var timeout: TimeInterval { get set }
+    func connectShare(name: String) async throws
+    func echo() async throws
+    func attributesOfItem(atPath path: String) async throws -> [URLResourceKey: Any]
+    func disconnectShare(gracefully: Bool) async throws
+}
+
 struct SMBConnectionTester: DestinationConnectionTesting {
+    typealias SessionFactory = (Destination, String) -> (any SMBConnectionSession)?
+
+    private let tcpProbe: any TCPConnectionProbing
+    private let sessionFactory: SessionFactory
+
+    init(
+        tcpProbe: any TCPConnectionProbing = TCPConnectionProbe(),
+        sessionFactory: @escaping SessionFactory = Self.makeSession
+    ) {
+        self.tcpProbe = tcpProbe
+        self.sessionFactory = sessionFactory
+    }
+
     func testConnection(to destination: Destination, password: String) async throws {
-        let credential = URLCredential(
-            user: destination.username,
-            password: password,
-            persistence: .forSession
-        )
-        guard let manager = SMB2Manager(url: destination.serverURL, credential: credential) else {
+        try await tcpProbe.connect(host: destination.host, port: 445)
+
+        guard let session = sessionFactory(destination, password) else {
             throw SMBConnectionError.invalidServer
         }
-        manager.timeout = 15
+        session.timeout = 15
+        var connectedToShare = false
 
         do {
-            try await manager.connectShare(name: destination.share)
+            try await session.connectShare(name: destination.share)
+            connectedToShare = true
             if destination.remotePath == "/" {
-                try await manager.echo()
+                try await session.echo()
             } else {
-                let attributes = try await manager.attributesOfItem(atPath: destination.remotePath)
+                let attributes = try await session.attributesOfItem(atPath: destination.remotePath)
                 try Self.validateSubfolderAttributes(attributes)
             }
-            try await manager.disconnectShare(gracefully: true)
+            try await session.disconnectShare(gracefully: true)
         } catch {
-            try? await manager.disconnectShare(gracefully: false)
-            throw SMBConnectionError.friendly(error)
+            try? await session.disconnectShare(gracefully: false)
+            let friendly = SMBConnectionError.friendly(error)
+            if !connectedToShare, friendly == .timedOut {
+                throw SMBConnectionError.negotiationTimedOut
+            }
+            throw friendly
         }
     }
 
@@ -37,13 +61,31 @@ struct SMBConnectionTester: DestinationConnectionTesting {
             throw SMBConnectionError.shareOrFolderMissing
         }
     }
+
+    private static func makeSession(
+        destination: Destination,
+        password: String
+    ) -> (any SMBConnectionSession)? {
+        let credential = URLCredential(
+            user: destination.username,
+            password: password,
+            persistence: .forSession
+        )
+        guard let manager = SMB2Manager(url: destination.serverURL, credential: credential) else {
+            return nil
+        }
+        return AMSMB2ConnectionSession(manager: manager)
+    }
 }
 
 enum SMBConnectionError: LocalizedError, Equatable {
     case invalidServer
+    case localNetworkDenied
+    case tcpTimedOut
     case authenticationFailed
     case serverUnavailable
     case timedOut
+    case negotiationTimedOut
     case shareOrFolderMissing
     case connectionFailed
 
@@ -51,12 +93,18 @@ enum SMBConnectionError: LocalizedError, Equatable {
         switch self {
         case .invalidServer:
             return "That server address is not valid. Enter a host name or IP address."
+        case .localNetworkDenied:
+            return "SMBDrop cannot access your network. Enable Local Network in Settings > Apps > SMBDrop, then try again."
+        case .tcpTimedOut:
+            return "This iPhone could not open port 445 on the server. Check Local Network permission, Wi-Fi or Tailscale, and the server address."
         case .authenticationFailed:
             return "The server rejected that username or password. Check both and try again."
         case .serverUnavailable:
             return "The server could not be reached. Check that this iPhone is on the same network and that SMB is running."
         case .timedOut:
             return "The server did not respond in time. Check its address and your Wi-Fi connection."
+        case .negotiationTimedOut:
+            return "This iPhone reached the server on port 445, but SMB negotiation did not finish. SMBDrop will use this result to choose a compatible security mode."
         case .shareOrFolderMissing:
             return "The share or subfolder was not found. Check both names and try again."
         case .connectionFailed:
@@ -65,6 +113,9 @@ enum SMBConnectionError: LocalizedError, Equatable {
     }
 
     static func friendly(_ error: any Error) -> SMBConnectionError {
+        if let error = error as? SMBConnectionError {
+            return error
+        }
         let error = error as NSError
         if error.domain == NSPOSIXErrorDomain {
             switch Int32(error.code) {
@@ -95,5 +146,34 @@ enum SMBConnectionError: LocalizedError, Equatable {
             return .serverUnavailable
         }
         return .connectionFailed
+    }
+}
+
+private final class AMSMB2ConnectionSession: SMBConnectionSession {
+    private let manager: SMB2Manager
+
+    init(manager: SMB2Manager) {
+        self.manager = manager
+    }
+
+    var timeout: TimeInterval {
+        get { manager.timeout }
+        set { manager.timeout = newValue }
+    }
+
+    func connectShare(name: String) async throws {
+        try await manager.connectShare(name: name)
+    }
+
+    func echo() async throws {
+        try await manager.echo()
+    }
+
+    func attributesOfItem(atPath path: String) async throws -> [URLResourceKey: Any] {
+        try await manager.attributesOfItem(atPath: path)
+    }
+
+    func disconnectShare(gracefully: Bool) async throws {
+        try await manager.disconnectShare(gracefully: gracefully)
     }
 }
