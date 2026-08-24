@@ -176,4 +176,28 @@ final class TransferOutboxTests: XCTestCase {
         let completedClaim = try await restartedProcess.claimNext()
         XCTAssertNil(completedClaim)
     }
+
+    func testRemovingTransferDeletesItsStagedPayloadAndHistory() async throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("SMBDropTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        let sourceURL = rootURL.appendingPathComponent("notes.txt")
+        try Data("private notes".utf8).write(to: sourceURL)
+        let outbox = TransferOutbox(
+            rootURL: rootURL.appendingPathComponent("Outbox", isDirectory: true)
+        )
+
+        let staged = try await outbox.enqueueFile(at: sourceURL, filename: "notes.txt")
+        let claim = try await outbox.claimNext()
+        let work = try XCTUnwrap(claim)
+        _ = try await outbox.fail(work, message: "The server is unavailable.")
+
+        try await outbox.remove(staged.id)
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: work.fileURL.path))
+        let remainingTransfers = try await outbox.transfers()
+        XCTAssertTrue(remainingTransfers.isEmpty)
+    }
 }
