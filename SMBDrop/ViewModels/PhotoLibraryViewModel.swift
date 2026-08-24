@@ -16,7 +16,7 @@ struct PhotoLibraryItem: Identifiable {
 }
 
 @MainActor
-final class PhotoLibraryViewModel: NSObject, ObservableObject {
+final class PhotoLibraryViewModel: NSObject, ObservableObject, PHPhotoLibraryChangeObserver {
     @Published private(set) var authorizationStatus: PHAuthorizationStatus
     @Published private(set) var items: [PhotoLibraryItem] = []
     @Published private(set) var selectedIDs: Set<String> = []
@@ -39,7 +39,7 @@ final class PhotoLibraryViewModel: NSObject, ObservableObject {
         PHPhotoLibrary.shared().unregisterChangeObserver(self)
     }
 
-    nonisolated func photoLibraryDidChange(_ changeInstance: PHChange) {
+    @objc nonisolated func photoLibraryDidChange(_ changeInstance: PHChange) {
         Task { @MainActor [weak self] in
             self?.reload()
         }

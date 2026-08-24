@@ -10,6 +10,10 @@ const setupViewModel = readFileSync(
   "SMBDrop/ViewModels/DestinationSetupViewModel.swift",
   "utf8",
 );
+const photoLibraryViewModel = readFileSync(
+  "SMBDrop/ViewModels/PhotoLibraryViewModel.swift",
+  "utf8",
+);
 const providerLoader = readFileSync(
   "ShareExtension/ShareItemProviderLoader.swift",
   "utf8",
@@ -32,6 +36,9 @@ if (!/PhotoLibraryView/.test(contentView) || !/FilesBrowserView/.test(contentVie
 }
 if (!/LazyVGrid/.test(photosView) || !/selectedIDs/.test(photosView)) {
   throw new Error("The Photos tab is not a selectable photo-library grid.");
+}
+if (!/PHPhotoLibraryChangeObserver/.test(photoLibraryViewModel) || !/@objc\s+nonisolated\s+func\s+photoLibraryDidChange/.test(photoLibraryViewModel)) {
+  throw new Error("The photo library model does not satisfy the Photos change-observer protocol.");
 }
 if (!/fileImporter/.test(filesView) || !/allowsMultipleSelection: true/.test(filesView)) {
   throw new Error("The Files tab does not use the native multi-select document picker.");
