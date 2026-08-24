@@ -127,6 +127,14 @@ enum SMBConnectionError: LocalizedError, Equatable {
             return error
         }
         let error = error as NSError
+        // AMSMB2 drops libsmb2's result when the SMB context closes on a fatal
+        // reply and rethrows whatever stale errno the C runtime held, so the
+        // NT status embedded in the message is the only trustworthy signal.
+        if let status = ntStatus(in: error.localizedDescription),
+            let friendly = friendlyNTStatus(status)
+        {
+            return friendly
+        }
         if error.domain == NSPOSIXErrorDomain {
             switch Int32(error.code) {
             case EACCES, EPERM:
@@ -156,6 +164,35 @@ enum SMBConnectionError: LocalizedError, Equatable {
             return .serverUnavailable
         }
         return .connectionFailed
+    }
+
+    // libsmb2 reports failures as e.g.
+    // "Session setup failed with (0xc000006d) STATUS_LOGON_FAILURE".
+    private static func ntStatus(in message: String) -> UInt32? {
+        guard let range = message.range(of: #"\(0x[0-9a-fA-F]{8}\)"#, options: .regularExpression)
+        else {
+            return nil
+        }
+        return UInt32(message[range].dropFirst(3).dropLast(1), radix: 16)
+    }
+
+    private static func friendlyNTStatus(_ status: UInt32) -> SMBConnectionError? {
+        switch status {
+        case 0xC000_00CC, // STATUS_BAD_NETWORK_NAME: the share does not exist
+            0xC000_0034,  // STATUS_OBJECT_NAME_NOT_FOUND
+            0xC000_003A:  // STATUS_OBJECT_PATH_NOT_FOUND
+            return .shareOrFolderMissing
+        case 0xC000_006D, // STATUS_LOGON_FAILURE
+            0xC000_006A,  // STATUS_WRONG_PASSWORD
+            0xC000_0064,  // STATUS_NO_SUCH_USER
+            0xC000_0071,  // STATUS_PASSWORD_EXPIRED
+            0xC000_0072,  // STATUS_ACCOUNT_DISABLED
+            0xC000_0234,  // STATUS_ACCOUNT_LOCKED_OUT
+            0xC000_0022:  // STATUS_ACCESS_DENIED
+            return .authenticationFailed
+        default:
+            return nil
+        }
     }
 }
 
