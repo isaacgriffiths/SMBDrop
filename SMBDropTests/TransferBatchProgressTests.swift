@@ -5,6 +5,7 @@ final class TransferBatchProgressTests: XCTestCase {
     func testOverallProgressCombinesCompletedAndCurrentItemBytes() {
         let batchID = UUID()
         let destinationID = UUID()
+        let startDate = Date(timeIntervalSince1970: 1_700_000_000)
         let transfers = [
             transfer(
                 filename: "one.jpg",
@@ -12,7 +13,8 @@ final class TransferBatchProgressTests: XCTestCase {
                 status: .completed,
                 bytesTransferred: 100,
                 destinationID: destinationID,
-                batchID: batchID
+                batchID: batchID,
+                createdAt: startDate
             ),
             transfer(
                 filename: "two.mov",
@@ -20,7 +22,8 @@ final class TransferBatchProgressTests: XCTestCase {
                 status: .uploading,
                 bytesTransferred: 100,
                 destinationID: destinationID,
-                batchID: batchID
+                batchID: batchID,
+                createdAt: startDate.addingTimeInterval(1)
             ),
             transfer(
                 filename: "three.pdf",
@@ -28,7 +31,8 @@ final class TransferBatchProgressTests: XCTestCase {
                 status: .queued,
                 bytesTransferred: 0,
                 destinationID: destinationID,
-                batchID: batchID
+                batchID: batchID,
+                createdAt: startDate.addingTimeInterval(2)
             ),
         ]
 
