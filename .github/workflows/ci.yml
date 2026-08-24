@@ -34,6 +34,37 @@ jobs:
       - name: Check shared transfer outbox target configuration
         run: node scripts/check-shared-outbox.mjs
 
+      - name: Verify claims across separate processes
+        shell: bash
+        run: |
+          set -euo pipefail
+          probe_dir="$(mktemp -d)"
+          trap 'rm -rf "$probe_dir"' EXIT
+
+          xcrun swiftc \
+            -parse-as-library \
+            Shared/AppGroup.swift \
+            Shared/Transfers/TransferOutbox.swift \
+            scripts/transfer-outbox-process-probe.swift \
+            -o "$probe_dir/transfer-outbox-probe"
+
+          outbox_dir="$probe_dir/outbox"
+          source_file="$probe_dir/source.mov"
+          printf 'cross-process payload' > "$source_file"
+          "$probe_dir/transfer-outbox-probe" \
+            enqueue "$outbox_dir" "$source_file" "source.mov" > /dev/null
+
+          "$probe_dir/transfer-outbox-probe" claim "$outbox_dir" > "$probe_dir/claim-one" &
+          first_pid=$!
+          "$probe_dir/transfer-outbox-probe" claim "$outbox_dir" > "$probe_dir/claim-two" &
+          second_pid=$!
+          wait "$first_pid"
+          wait "$second_pid"
+
+          claim_count="$(awk '$0 != "none" { count++ } END { print count + 0 }' \
+            "$probe_dir/claim-one" "$probe_dir/claim-two")"
+          test "$claim_count" -eq 1
+
       - name: Resolve Swift packages
         run: |
           xcodebuild \
