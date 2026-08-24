@@ -63,6 +63,16 @@ final class TransferOutboxTests: XCTestCase {
         XCTAssertEqual(recoveredWork.transfer.id, staged.id)
         XCTAssertNotEqual(recoveredWork.claimID, abandonedWork.claimID)
         XCTAssertEqual(recoveredWork.transfer.attemptCount, 2)
+
+        do {
+            _ = try await crashedProcess.fail(
+                abandonedWork,
+                message: "This claimant no longer owns the Transfer."
+            )
+            XCTFail("An expired claimant must not mutate a reclaimed Transfer")
+        } catch TransferOutboxError.claimNoLongerValid {
+            // Expected: the restarted process owns the replacement claim.
+        }
     }
 
     func testFailedTransferKeepsItsErrorAndCanBeRetried() async throws {
@@ -199,5 +209,38 @@ final class TransferOutboxTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: work.fileURL.path))
         let remainingTransfers = try await outbox.transfers()
         XCTAssertTrue(remainingTransfers.isEmpty)
+    }
+
+    func testConcurrentProcessesCannotClaimTheSameTransfer() async throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("SMBDropTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        let sourceURL = rootURL.appendingPathComponent("shared.mov")
+        try Data("one shared payload".utf8).write(to: sourceURL)
+        let outboxURL = rootURL.appendingPathComponent("Outbox", isDirectory: true)
+        let stagingProcess = TransferOutbox(rootURL: outboxURL)
+        let staged = try await stagingProcess.enqueueFile(at: sourceURL, filename: "shared.mov")
+        let contenders = (0..<32).map { _ in TransferOutbox(rootURL: outboxURL) }
+
+        let claims = try await withThrowingTaskGroup(of: TransferWork?.self) { group in
+            for contender in contenders {
+                group.addTask {
+                    try await contender.claimNext()
+                }
+            }
+
+            var claimedWork: [TransferWork] = []
+            for try await claim in group {
+                if let claim {
+                    claimedWork.append(claim)
+                }
+            }
+            return claimedWork
+        }
+
+        XCTAssertEqual(claims.count, 1)
+        XCTAssertEqual(claims.first?.transfer.id, staged.id)
     }
 }
