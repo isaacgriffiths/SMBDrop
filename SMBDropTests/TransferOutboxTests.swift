@@ -243,4 +243,28 @@ final class TransferOutboxTests: XCTestCase {
         XCTAssertEqual(claims.count, 1)
         XCTAssertEqual(claims.first?.transfer.id, staged.id)
     }
+
+    func testActiveTransferPreventsNextQueuedTransferFromStarting() async throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("SMBDropTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        let firstSourceURL = rootURL.appendingPathComponent("first.mov")
+        let secondSourceURL = rootURL.appendingPathComponent("second.mov")
+        try Data("first payload".utf8).write(to: firstSourceURL)
+        try Data("second payload".utf8).write(to: secondSourceURL)
+        let outboxURL = rootURL.appendingPathComponent("Outbox", isDirectory: true)
+        let firstProcess = TransferOutbox(rootURL: outboxURL)
+
+        let first = try await firstProcess.enqueueFile(at: firstSourceURL, filename: "first.mov")
+        _ = try await firstProcess.enqueueFile(at: secondSourceURL, filename: "second.mov")
+        let firstClaim = try await firstProcess.claimNext()
+        XCTAssertEqual(firstClaim?.transfer.id, first.id)
+
+        let secondProcess = TransferOutbox(rootURL: outboxURL)
+        let competingClaim = try await secondProcess.claimNext()
+
+        XCTAssertNil(competingClaim)
+    }
 }
