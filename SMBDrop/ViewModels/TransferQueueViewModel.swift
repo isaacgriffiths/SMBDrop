@@ -324,10 +324,15 @@ final class TransferQueueViewModel: ObservableObject {
             subtitle: "Preparing transfer…"
         )
         request.strategy = .queue
+        // Xcode 26.3 does not expose the replacement completion-handler API
+        // to Swift yet, so keep its synchronous compatibility API off-main.
         let submission = ContinuedTaskRequestBox(request: request)
         let submissionError: (any Error)? = await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
-                BGTaskScheduler.shared.submitTaskRequest(submission.request) { error in
+                do {
+                    try BGTaskScheduler.shared.submit(submission.request)
+                    continuation.resume(returning: nil)
+                } catch {
                     continuation.resume(returning: error)
                 }
             }

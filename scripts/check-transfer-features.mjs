@@ -63,7 +63,7 @@ if (!/BGContinuedProcessingTaskRequest/.test(transferQueueViewModel)
     || !/task\.progress/.test(transferQueueViewModel)
     || !/setTaskCompleted/.test(transferQueueViewModel)
     || !/beginBackgroundTask/.test(transferQueueViewModel)
-    || !/submitTaskRequest/.test(transferQueueViewModel)
+    || !/DispatchQueue\.global/.test(transferQueueViewModel)
     || !/strategy = \.queue/.test(transferQueueViewModel)
     || !/TransferDrainLifetime/.test(transferQueueViewModel)) {
   throw new Error("Main-app transfers do not continue with system progress after backgrounding.");
