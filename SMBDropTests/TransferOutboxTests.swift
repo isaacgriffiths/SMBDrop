@@ -24,7 +24,8 @@ final class TransferOutboxTests: XCTestCase {
         XCTAssertEqual(staged.status, .queued)
 
         let restartedProcess = TransferOutbox(rootURL: rootURL.appendingPathComponent("Outbox"))
-        let work = try XCTUnwrap(try await restartedProcess.claimNext())
+        let claimed = try await restartedProcess.claimNext()
+        let work = try XCTUnwrap(claimed)
 
         XCTAssertEqual(work.transfer.id, staged.id)
         XCTAssertEqual(work.transfer.status, .uploading)
