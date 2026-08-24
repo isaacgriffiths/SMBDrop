@@ -100,7 +100,8 @@ final class SMBTransferWorkerTests: XCTestCase {
         let result = await worker.drain(
             outbox: fixture.outbox,
             destination: destination,
-            password: "secret"
+            password: "secret",
+            destinationID: fixture.destinationID
         )
 
         XCTAssertNil(result.failed)
@@ -118,6 +119,8 @@ private final class UploadFixture {
     let sourceURL: URL
     let filename: String
     let outbox: TransferOutbox
+    let destinationID = UUID()
+    let batchID = UUID()
 
     init(filename: String, bytes: Data) throws {
         rootURL = FileManager.default.temporaryDirectory
@@ -130,12 +133,17 @@ private final class UploadFixture {
     }
 
     func enqueue() async throws -> Transfer {
-        try await outbox.enqueueFile(at: sourceURL, filename: filename)
+        try await outbox.enqueueFile(
+            at: sourceURL,
+            filename: filename,
+            destinationID: destinationID,
+            batchID: batchID
+        )
     }
 
     func claimedWork() async throws -> TransferWork {
         _ = try await enqueue()
-        let work = try await outbox.claimNext()
+        let work = try await outbox.claimNext(for: destinationID)
         return try XCTUnwrap(work)
     }
 

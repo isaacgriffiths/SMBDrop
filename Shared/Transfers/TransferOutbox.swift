@@ -70,8 +70,8 @@ actor TransferOutbox {
     func enqueueFile(
         at sourceURL: URL,
         filename: String,
-        destinationID: UUID? = nil,
-        batchID: UUID? = nil,
+        destinationID: UUID,
+        batchID: UUID,
         moveSource: Bool = false
     ) throws -> Transfer {
         let filename = try canonicalFilename(filename)
@@ -91,6 +91,9 @@ actor TransferOutbox {
         }
 
         return try withExclusiveLock {
+            guard !readRetiredDestinationIDs().contains(destinationID) else {
+                throw TransferOutboxError.destinationRemoved
+            }
             let currentDate = now()
             let transfer = Transfer(
                 id: UUID(),
@@ -133,7 +136,7 @@ actor TransferOutbox {
     }
 
     func claimNext(
-        for destinationID: UUID? = nil,
+        for destinationID: UUID,
         matching transferIDs: Set<UUID>? = nil
     ) throws -> TransferWork? {
         try withExclusiveLock {
@@ -219,6 +222,29 @@ actor TransferOutbox {
                 transfer.updatedAt = now()
                 try write(transfer)
             }
+        }
+    }
+
+    /// Atomically prevents future extension enqueues for this destination.
+    /// Returns false while unfinished work still belongs to the destination.
+    func retireDestination(_ destinationID: UUID) throws -> Bool {
+        try withExclusiveLock {
+            let hasUnfinishedTransfers = try transfersUnlocked().contains {
+                $0.destinationID == destinationID && $0.status != .completed
+            }
+            guard !hasUnfinishedTransfers else { return false }
+            var retiredIDs = readRetiredDestinationIDs()
+            retiredIDs.insert(destinationID)
+            try writeRetiredDestinationIDs(retiredIDs)
+            return true
+        }
+    }
+
+    func restoreDestination(_ destinationID: UUID) throws {
+        try withExclusiveLock {
+            var retiredIDs = readRetiredDestinationIDs()
+            retiredIDs.remove(destinationID)
+            try writeRetiredDestinationIDs(retiredIDs)
         }
     }
 
@@ -380,6 +406,22 @@ actor TransferOutbox {
         transferDirectoryURL(for: id).appendingPathComponent("claim.json", isDirectory: false)
     }
 
+    private var retiredDestinationsURL: URL {
+        rootURL.appendingPathComponent(".retired-destinations.json", isDirectory: false)
+    }
+
+    private func readRetiredDestinationIDs() -> Set<UUID> {
+        guard let data = try? Data(contentsOf: retiredDestinationsURL),
+              let ids = try? decoder.decode(Set<UUID>.self, from: data) else {
+            return []
+        }
+        return ids
+    }
+
+    private func writeRetiredDestinationIDs(_ ids: Set<UUID>) throws {
+        try encoder.encode(ids).write(to: retiredDestinationsURL, options: .atomic)
+    }
+
     private func write(_ transfer: Transfer) throws {
         let data = try encoder.encode(transfer)
         try data.write(
@@ -441,6 +483,7 @@ enum TransferOutboxError: LocalizedError {
     case sourceTimestampUnavailable
     case storageLockUnavailable
     case claimNoLongerValid
+    case destinationRemoved
     case transferNotFound
 
     var errorDescription: String? {
@@ -463,6 +506,8 @@ enum TransferOutboxError: LocalizedError {
             "SMBDrop could not safely update its shared transfer queue."
         case .claimNoLongerValid:
             "Another SMBDrop process has taken over this transfer."
+        case .destinationRemoved:
+            "That SMB share was removed before this item could be queued. Choose another share."
         case .transferNotFound:
             "That transfer is no longer in the queue."
         }

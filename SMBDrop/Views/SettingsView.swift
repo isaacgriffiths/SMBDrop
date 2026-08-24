@@ -98,8 +98,14 @@ struct SettingsView: View {
                 presenting: destinationToRemove
             ) { destination in
                 Button("Remove", role: .destructive) {
-                    viewModel.removeDestination(destination.id)
-                    destinationToRemove = nil
+                    Task {
+                        let removed = await viewModel.removeDestination(destination.id)
+                        destinationToRemove = nil
+                        if !removed {
+                            blockedDestinationRemoval = destination
+                        }
+                        await transferQueue.refresh()
+                    }
                 }
                 Button("Cancel", role: .cancel) {
                     destinationToRemove = nil
@@ -187,6 +193,12 @@ struct SettingsView: View {
                 }
             } else if transfer.status == .completed {
                 Button("Remove from History", role: .destructive) {
+                    Task { await transferQueue.remove(transfer.id) }
+                }
+                .font(.caption)
+            } else if transfer.status == .queued,
+                      transfer.destinationID.flatMap({ transferQueue.destinationNames[$0] }) == nil {
+                Button("Remove Unavailable Item", role: .destructive) {
                     Task { await transferQueue.remove(transfer.id) }
                 }
                 .font(.caption)

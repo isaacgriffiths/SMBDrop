@@ -170,7 +170,7 @@ struct SMBTransferWorker {
         outbox: TransferOutbox,
         destination: Destination,
         password: String,
-        destinationID: UUID? = nil,
+        destinationID: UUID,
         transferIDs: Set<UUID>? = nil,
         progress: (@Sendable (Transfer) -> Void)? = nil
     ) async -> TransferDrainResult {

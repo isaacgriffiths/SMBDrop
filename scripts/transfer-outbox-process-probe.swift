@@ -3,6 +3,8 @@ import Foundation
 @main
 struct TransferOutboxProcessProbe {
     static func main() async throws {
+        let destinationID = UUID(uuidString: "11111111-1111-1111-1111-111111111111")!
+        let batchID = UUID(uuidString: "22222222-2222-2222-2222-222222222222")!
         let arguments = CommandLine.arguments
         guard arguments.count >= 3 else {
             throw ProbeError.invalidArguments
@@ -18,13 +20,18 @@ struct TransferOutboxProcessProbe {
                 throw ProbeError.invalidArguments
             }
             let sourceURL = URL(fileURLWithPath: arguments[3], isDirectory: false)
-            let transfer = try await outbox.enqueueFile(at: sourceURL, filename: arguments[4])
+            let transfer = try await outbox.enqueueFile(
+                at: sourceURL,
+                filename: arguments[4],
+                destinationID: destinationID,
+                batchID: batchID
+            )
             print(transfer.id.uuidString)
         case "claim":
             guard arguments.count == 3 else {
                 throw ProbeError.invalidArguments
             }
-            let work = try await outbox.claimNext()
+            let work = try await outbox.claimNext(for: destinationID)
             print(work?.transfer.id.uuidString ?? "none")
         default:
             throw ProbeError.invalidArguments

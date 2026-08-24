@@ -321,14 +321,26 @@ final class DestinationSetupViewModel: ObservableObject {
         resetFolderBrowser()
     }
 
-    func removeDestination() {
-        guard let id = editingDestinationID ?? destinations.first?.id else { return }
-        removeDestination(id)
+    func removeDestination() async -> Bool {
+        guard let id = editingDestinationID ?? destinations.first?.id else { return false }
+        return await removeDestination(id)
     }
 
-    func removeDestination(_ id: UUID) {
+    func removeDestination(_ id: UUID) async -> Bool {
         do {
-            try store.remove(id: id)
+            let outbox = try TransferOutbox.shared()
+            guard try await outbox.retireDestination(id) else {
+                connectionState = .failure(
+                    "Finish, retry, or remove this share's pending transfers before deleting it."
+                )
+                return false
+            }
+            do {
+                try store.remove(id: id)
+            } catch {
+                try? await outbox.restoreDestination(id)
+                throw error
+            }
             reloadDestinations()
             isEditing = false
             editingDestinationID = nil
@@ -336,8 +348,10 @@ final class DestinationSetupViewModel: ObservableObject {
             verifiedForm = nil
             availableShares = []
             resetFolderBrowser()
+            return true
         } catch {
             connectionState = .failure(error.localizedDescription)
+            return false
         }
     }
 

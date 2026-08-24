@@ -3,6 +3,9 @@ import XCTest
 @testable import SMBDrop
 
 final class TransferOutboxTests: XCTestCase {
+    private let destinationID = UUID()
+    private let batchID = UUID()
+
     func testStagedFileSurvivesRestartAndIsNextToUpload() async throws {
         let rootURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("SMBDropTests-\(UUID().uuidString)", isDirectory: true)
@@ -16,7 +19,9 @@ final class TransferOutboxTests: XCTestCase {
         let firstProcess = TransferOutbox(rootURL: rootURL.appendingPathComponent("Outbox"))
         let staged = try await firstProcess.enqueueFile(
             at: sourceURL,
-            filename: "IMG_0001.HEIC"
+            filename: "IMG_0001.HEIC",
+            destinationID: destinationID,
+            batchID: batchID
         )
 
         XCTAssertEqual(staged.filename, "IMG_0001.HEIC")
@@ -24,7 +29,7 @@ final class TransferOutboxTests: XCTestCase {
         XCTAssertEqual(staged.status, .queued)
 
         let restartedProcess = TransferOutbox(rootURL: rootURL.appendingPathComponent("Outbox"))
-        let claimed = try await restartedProcess.claimNext()
+        let claimed = try await restartedProcess.claimNext(for: destinationID)
         let work = try XCTUnwrap(claimed)
 
         XCTAssertEqual(work.transfer.id, staged.id)
@@ -48,8 +53,13 @@ final class TransferOutboxTests: XCTestCase {
             claimLeaseDuration: 60,
             now: { firstClaimDate }
         )
-        let staged = try await crashedProcess.enqueueFile(at: sourceURL, filename: "clip.mov")
-        let abandonedClaim = try await crashedProcess.claimNext()
+        let staged = try await crashedProcess.enqueueFile(
+            at: sourceURL,
+            filename: "clip.mov",
+            destinationID: destinationID,
+            batchID: batchID
+        )
+        let abandonedClaim = try await crashedProcess.claimNext(for: destinationID)
         let abandonedWork = try XCTUnwrap(abandonedClaim)
 
         let restartedProcess = TransferOutbox(
@@ -57,7 +67,7 @@ final class TransferOutboxTests: XCTestCase {
             claimLeaseDuration: 60,
             now: { firstClaimDate.addingTimeInterval(61) }
         )
-        let recoveredClaim = try await restartedProcess.claimNext()
+        let recoveredClaim = try await restartedProcess.claimNext(for: destinationID)
         let recoveredWork = try XCTUnwrap(recoveredClaim)
 
         XCTAssertEqual(recoveredWork.transfer.id, staged.id)
@@ -86,8 +96,13 @@ final class TransferOutboxTests: XCTestCase {
         let outboxURL = rootURL.appendingPathComponent("Outbox", isDirectory: true)
         let outbox = TransferOutbox(rootURL: outboxURL)
 
-        let staged = try await outbox.enqueueFile(at: sourceURL, filename: "document.pdf")
-        let firstClaim = try await outbox.claimNext()
+        let staged = try await outbox.enqueueFile(
+            at: sourceURL,
+            filename: "document.pdf",
+            destinationID: destinationID,
+            batchID: batchID
+        )
+        let firstClaim = try await outbox.claimNext(for: destinationID)
         let work = try XCTUnwrap(firstClaim)
         let failed = try await outbox.fail(work, message: "The share stopped responding.")
 
@@ -100,14 +115,14 @@ final class TransferOutboxTests: XCTestCase {
         XCTAssertEqual(persisted.id, staged.id)
         XCTAssertEqual(persisted.status, .failed)
         XCTAssertEqual(persisted.errorMessage, "The share stopped responding.")
-        let claimWhileFailed = try await restartedProcess.claimNext()
+        let claimWhileFailed = try await restartedProcess.claimNext(for: destinationID)
         XCTAssertNil(claimWhileFailed)
 
         let retried = try await restartedProcess.retry(staged.id)
         XCTAssertEqual(retried.status, .queued)
         XCTAssertNil(retried.errorMessage)
 
-        let secondClaim = try await restartedProcess.claimNext()
+        let secondClaim = try await restartedProcess.claimNext(for: destinationID)
         let reclaimed = try XCTUnwrap(secondClaim)
         XCTAssertEqual(reclaimed.transfer.id, staged.id)
         XCTAssertEqual(reclaimed.transfer.attemptCount, 2)
@@ -130,8 +145,13 @@ final class TransferOutboxTests: XCTestCase {
             now: { firstDate }
         )
 
-        _ = try await outbox.enqueueFile(at: sourceURL, filename: "archive.zip")
-        let claim = try await outbox.claimNext()
+        _ = try await outbox.enqueueFile(
+            at: sourceURL,
+            filename: "archive.zip",
+            destinationID: destinationID,
+            batchID: batchID
+        )
+        let claim = try await outbox.claimNext(for: destinationID)
         let work = try XCTUnwrap(claim)
         let uploadingProcess = TransferOutbox(
             rootURL: outboxURL,
@@ -148,7 +168,7 @@ final class TransferOutboxTests: XCTestCase {
             claimLeaseDuration: 60,
             now: { firstDate.addingTimeInterval(61) }
         )
-        let competingClaim = try await beforeRenewedLeaseExpires.claimNext()
+        let competingClaim = try await beforeRenewedLeaseExpires.claimNext(for: destinationID)
         XCTAssertNil(competingClaim)
         let persisted = try await beforeRenewedLeaseExpires.transfers()
         XCTAssertEqual(persisted.first?.bytesTransferred, 8)
@@ -166,8 +186,13 @@ final class TransferOutboxTests: XCTestCase {
         let outboxURL = rootURL.appendingPathComponent("Outbox", isDirectory: true)
         let outbox = TransferOutbox(rootURL: outboxURL)
 
-        let staged = try await outbox.enqueueFile(at: sourceURL, filename: "IMG_0001.HEIC")
-        let claim = try await outbox.claimNext()
+        let staged = try await outbox.enqueueFile(
+            at: sourceURL,
+            filename: "IMG_0001.HEIC",
+            destinationID: destinationID,
+            batchID: batchID
+        )
+        let claim = try await outbox.claimNext(for: destinationID)
         let work = try XCTUnwrap(claim)
         let completed = try await outbox.complete(
             work,
@@ -183,7 +208,7 @@ final class TransferOutboxTests: XCTestCase {
         let history = try await restartedProcess.transfers()
         XCTAssertEqual(history.map(\.id), [staged.id])
         XCTAssertEqual(history.first?.status, .completed)
-        let completedClaim = try await restartedProcess.claimNext()
+        let completedClaim = try await restartedProcess.claimNext(for: destinationID)
         XCTAssertNil(completedClaim)
     }
 
@@ -199,8 +224,13 @@ final class TransferOutboxTests: XCTestCase {
             rootURL: rootURL.appendingPathComponent("Outbox", isDirectory: true)
         )
 
-        let staged = try await outbox.enqueueFile(at: sourceURL, filename: "notes.txt")
-        let claim = try await outbox.claimNext()
+        let staged = try await outbox.enqueueFile(
+            at: sourceURL,
+            filename: "notes.txt",
+            destinationID: destinationID,
+            batchID: batchID
+        )
+        let claim = try await outbox.claimNext(for: destinationID)
         let work = try XCTUnwrap(claim)
         _ = try await outbox.fail(work, message: "The server is unavailable.")
 
@@ -221,13 +251,19 @@ final class TransferOutboxTests: XCTestCase {
         try Data("one shared payload".utf8).write(to: sourceURL)
         let outboxURL = rootURL.appendingPathComponent("Outbox", isDirectory: true)
         let stagingProcess = TransferOutbox(rootURL: outboxURL)
-        let staged = try await stagingProcess.enqueueFile(at: sourceURL, filename: "shared.mov")
+        let staged = try await stagingProcess.enqueueFile(
+            at: sourceURL,
+            filename: "shared.mov",
+            destinationID: destinationID,
+            batchID: batchID
+        )
         let contenders = (0..<32).map { _ in TransferOutbox(rootURL: outboxURL) }
+        let claimDestinationID = destinationID
 
         let claims = try await withThrowingTaskGroup(of: TransferWork?.self) { group in
             for contender in contenders {
                 group.addTask {
-                    try await contender.claimNext()
+                    try await contender.claimNext(for: claimDestinationID)
                 }
             }
 
@@ -257,13 +293,23 @@ final class TransferOutboxTests: XCTestCase {
         let outboxURL = rootURL.appendingPathComponent("Outbox", isDirectory: true)
         let firstProcess = TransferOutbox(rootURL: outboxURL)
 
-        let first = try await firstProcess.enqueueFile(at: firstSourceURL, filename: "first.mov")
-        _ = try await firstProcess.enqueueFile(at: secondSourceURL, filename: "second.mov")
-        let firstClaim = try await firstProcess.claimNext()
+        let first = try await firstProcess.enqueueFile(
+            at: firstSourceURL,
+            filename: "first.mov",
+            destinationID: destinationID,
+            batchID: batchID
+        )
+        _ = try await firstProcess.enqueueFile(
+            at: secondSourceURL,
+            filename: "second.mov",
+            destinationID: destinationID,
+            batchID: batchID
+        )
+        let firstClaim = try await firstProcess.claimNext(for: destinationID)
         XCTAssertEqual(firstClaim?.transfer.id, first.id)
 
         let secondProcess = TransferOutbox(rootURL: outboxURL)
-        let competingClaim = try await secondProcess.claimNext()
+        let competingClaim = try await secondProcess.claimNext(for: destinationID)
 
         XCTAssertNil(competingClaim)
     }
@@ -282,7 +328,9 @@ final class TransferOutboxTests: XCTestCase {
 
         let staged = try await outbox.enqueueFile(
             at: sourceURL,
-            filename: " Report final .pdf "
+            filename: " Report final .pdf ",
+            destinationID: destinationID,
+            batchID: batchID
         )
 
         XCTAssertEqual(staged.filename, " Report final .pdf ")
@@ -307,12 +355,14 @@ final class TransferOutboxTests: XCTestCase {
         _ = try await outbox.enqueueFile(
             at: firstURL,
             filename: "first.txt",
-            destinationID: firstDestinationID
+            destinationID: firstDestinationID,
+            batchID: UUID()
         )
         let second = try await outbox.enqueueFile(
             at: secondURL,
             filename: "second.txt",
-            destinationID: secondDestinationID
+            destinationID: secondDestinationID,
+            batchID: UUID()
         )
 
         let claimed = try await outbox.claimNext(for: secondDestinationID)
@@ -332,7 +382,11 @@ final class TransferOutboxTests: XCTestCase {
         try Data("legacy".utf8).write(to: sourceURL)
         let destinationID = UUID()
         let outbox = TransferOutbox(rootURL: rootURL.appendingPathComponent("Outbox"))
-        _ = try await outbox.enqueueFile(at: sourceURL, filename: "legacy.txt")
+        try stageLegacyTransfer(
+            at: sourceURL,
+            filename: "legacy.txt",
+            outboxRootURL: rootURL.appendingPathComponent("Outbox")
+        )
 
         try await outbox.assignUnassignedTransfers(to: destinationID)
 
@@ -340,5 +394,66 @@ final class TransferOutboxTests: XCTestCase {
         let work = try XCTUnwrap(claimed)
         XCTAssertEqual(work.transfer.destinationID, destinationID)
         XCTAssertNotNil(work.transfer.batchID)
+    }
+
+    func testRetiredDestinationRejectsAStaleExtensionEnqueue() async throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("SMBDropTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+        let sourceURL = rootURL.appendingPathComponent("late.txt")
+        try Data("late".utf8).write(to: sourceURL)
+        let outbox = TransferOutbox(rootURL: rootURL.appendingPathComponent("Outbox"))
+
+        XCTAssertTrue(try await outbox.retireDestination(destinationID))
+
+        do {
+            _ = try await outbox.enqueueFile(
+                at: sourceURL,
+                filename: "late.txt",
+                destinationID: destinationID,
+                batchID: batchID
+            )
+            XCTFail("A retired destination must reject stale extension work")
+        } catch TransferOutboxError.destinationRemoved {
+            // Expected.
+        }
+    }
+
+    private func stageLegacyTransfer(
+        at sourceURL: URL,
+        filename: String,
+        outboxRootURL: URL
+    ) throws {
+        let values = try sourceURL.resourceValues(
+            forKeys: [.fileSizeKey, .creationDateKey, .contentModificationDateKey]
+        )
+        let id = UUID()
+        let directoryURL = outboxRootURL.appendingPathComponent(id.uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
+        try FileManager.default.copyItem(
+            at: sourceURL,
+            to: directoryURL.appendingPathComponent("payload")
+        )
+        let transfer = Transfer(
+            id: id,
+            filename: filename,
+            byteCount: Int64(values.fileSize ?? 0),
+            createdAt: Date(),
+            sourceCreationDate: values.creationDate,
+            sourceModificationDate: values.contentModificationDate,
+            destinationID: nil,
+            batchID: nil,
+            updatedAt: Date(),
+            status: .queued,
+            bytesTransferred: 0,
+            attemptCount: 0,
+            remoteFilename: nil,
+            errorMessage: nil
+        )
+        try JSONEncoder().encode(transfer).write(
+            to: directoryURL.appendingPathComponent("transfer.json"),
+            options: .atomic
+        )
     }
 }

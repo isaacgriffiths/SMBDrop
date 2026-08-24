@@ -45,6 +45,12 @@ if (!/loadAll\(\)/.test(destinationStore) || !/savedDestinations\.v2/.test(desti
 if (!/destinationID/.test(outbox) || !/batchID/.test(outbox) || !/claimNext\(/.test(outbox)) {
   throw new Error("Queued transfers are not bound to a destination and batch.");
 }
+if (/destinationID: UUID\? = nil/.test(outbox) || /batchID: UUID\? = nil/.test(outbox)) {
+  throw new Error("The outbox still allows new transfers without a destination or batch.");
+}
+if (!/retireDestination/.test(outbox) || !/destinationRemoved/.test(outbox)) {
+  throw new Error("Destination removal is not coordinated with extension enqueueing.");
+}
 if (!/Use & Save/.test(setupView) || !/useBrowsedFolder\(\) async/.test(setupViewModel)) {
   throw new Error("A browsed folder is not verified and saved before the picker closes.");
 }
