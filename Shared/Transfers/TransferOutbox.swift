@@ -304,12 +304,13 @@ actor TransferOutbox {
     }
 
     private func canonicalFilename(_ value: String) throws -> String {
-        let filename = URL(fileURLWithPath: value).lastPathComponent
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !filename.isEmpty, filename != ".", filename != ".." else {
+        guard !value.isEmpty,
+              value != ".",
+              value != "..",
+              URL(fileURLWithPath: value).lastPathComponent == value else {
             throw TransferOutboxError.invalidFilename
         }
-        return filename
+        return value
     }
 
     private func transferDirectoryURL(for id: UUID) -> URL {
