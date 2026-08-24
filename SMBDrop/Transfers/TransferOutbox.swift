@@ -245,6 +245,13 @@ actor TransferOutbox {
         }
     }
 
+    func remove(_ id: UUID) throws {
+        try withExclusiveLock {
+            _ = try transferUnlocked(id: id)
+            try fileManager.removeItem(at: transferDirectoryURL(for: id))
+        }
+    }
+
     private func transfersUnlocked() throws -> [Transfer] {
         guard fileManager.fileExists(atPath: rootURL.path) else { return [] }
         return try fileManager.contentsOfDirectory(
