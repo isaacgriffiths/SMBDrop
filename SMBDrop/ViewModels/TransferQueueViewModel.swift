@@ -324,12 +324,15 @@ final class TransferQueueViewModel: ObservableObject {
             subtitle: "Preparing transfer…"
         )
         request.strategy = .queue
-        do {
-            try await BGTaskScheduler.shared.submitTaskRequest(request)
-            return true
-        } catch {
-            return false
+        let submission = ContinuedTaskRequestBox(request: request)
+        let submissionError: (any Error)? = await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                BGTaskScheduler.shared.submitTaskRequest(submission.request) { error in
+                    continuation.resume(returning: error)
+                }
+            }
         }
+        return submissionError == nil
     }
 
     @available(iOS 26.0, *)
@@ -402,6 +405,15 @@ private final class ContinuedTransferContext {
 
     init(task: BGContinuedProcessingTask) {
         self.task = task
+    }
+}
+
+@available(iOS 26.0, *)
+private final class ContinuedTaskRequestBox: @unchecked Sendable {
+    let request: BGContinuedProcessingTaskRequest
+
+    init(request: BGContinuedProcessingTaskRequest) {
+        self.request = request
     }
 }
 
