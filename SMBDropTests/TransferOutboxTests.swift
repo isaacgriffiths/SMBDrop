@@ -90,7 +90,8 @@ final class TransferOutboxTests: XCTestCase {
         XCTAssertEqual(persisted.id, staged.id)
         XCTAssertEqual(persisted.status, .failed)
         XCTAssertEqual(persisted.errorMessage, "The share stopped responding.")
-        XCTAssertNil(try await restartedProcess.claimNext())
+        let claimWhileFailed = try await restartedProcess.claimNext()
+        XCTAssertNil(claimWhileFailed)
 
         let retried = try await restartedProcess.retry(staged.id)
         XCTAssertEqual(retried.status, .queued)
@@ -137,8 +138,42 @@ final class TransferOutboxTests: XCTestCase {
             claimLeaseDuration: 60,
             now: { firstDate.addingTimeInterval(61) }
         )
-        XCTAssertNil(try await beforeRenewedLeaseExpires.claimNext())
+        let competingClaim = try await beforeRenewedLeaseExpires.claimNext()
+        XCTAssertNil(competingClaim)
         let persisted = try await beforeRenewedLeaseExpires.transfers()
         XCTAssertEqual(persisted.first?.bytesTransferred, 8)
+    }
+
+    func testCompletedTransferKeepsHistoryAndDeletesStagedPayload() async throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("SMBDropTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        let sourceURL = rootURL.appendingPathComponent("IMG_0001.HEIC")
+        let bytes = Data("original photo bytes".utf8)
+        try bytes.write(to: sourceURL)
+        let outboxURL = rootURL.appendingPathComponent("Outbox", isDirectory: true)
+        let outbox = TransferOutbox(rootURL: outboxURL)
+
+        let staged = try await outbox.enqueueFile(at: sourceURL, filename: "IMG_0001.HEIC")
+        let claim = try await outbox.claimNext()
+        let work = try XCTUnwrap(claim)
+        let completed = try await outbox.complete(
+            work,
+            remoteFilename: "IMG_0001 (2).HEIC"
+        )
+
+        XCTAssertEqual(completed.status, .completed)
+        XCTAssertEqual(completed.bytesTransferred, Int64(bytes.count))
+        XCTAssertEqual(completed.remoteFilename, "IMG_0001 (2).HEIC")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: work.fileURL.path))
+
+        let restartedProcess = TransferOutbox(rootURL: outboxURL)
+        let history = try await restartedProcess.transfers()
+        XCTAssertEqual(history.map(\.id), [staged.id])
+        XCTAssertEqual(history.first?.status, .completed)
+        let completedClaim = try await restartedProcess.claimNext()
+        XCTAssertNil(completedClaim)
     }
 }
