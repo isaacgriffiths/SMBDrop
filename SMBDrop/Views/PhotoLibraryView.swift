@@ -183,16 +183,18 @@ struct PhotoLibraryView: View {
                     .accessibilityHint("Double tap to toggle selection")
                 }
             }
+            // The bridge must live inside the scroll content so its host view
+            // can find the enclosing UIScrollView through its superviews.
+            .background {
+                PhotoDragSelectionBridge(
+                    isEnabled: isSelecting,
+                    onBegan: beginDragSelection,
+                    onChanged: continueDragSelection,
+                    onEnded: endDragSelection
+                )
+            }
         }
         .onPreferenceChange(PhotoFramePreferenceKey.self) { photoFrames = $0 }
-        .background {
-            PhotoDragSelectionBridge(
-                isEnabled: isSelecting,
-                onBegan: beginDragSelection,
-                onChanged: continueDragSelection,
-                onEnded: endDragSelection
-            )
-        }
         .background(Color(uiColor: .systemBackground))
     }
 
@@ -473,14 +475,14 @@ private struct PhotoGridCell: View {
             Circle()
                 .fill(isSelected ? Color.accentColor : Color.black.opacity(0.32))
             Circle()
-                .stroke(Color.white, lineWidth: 2)
+                .stroke(Color.white, lineWidth: 1.5)
             if isSelected {
                 Image(systemName: "checkmark")
-                    .font(.caption.bold())
+                    .font(.system(size: 9, weight: .bold))
                     .foregroundStyle(.white)
             }
         }
-        .frame(width: 25, height: 25)
+        .frame(width: 17, height: 17)
     }
 
 }

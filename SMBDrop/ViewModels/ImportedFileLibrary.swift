@@ -147,6 +147,15 @@ final class ImportedFileLibrary: ObservableObject {
         }
     }
 
+    func delete(_ item: ImportedFile) {
+        do {
+            try FileManager.default.removeItem(at: item.url)
+            reload()
+        } catch {
+            errorMessage = "Couldn’t delete \(item.name). \(error.localizedDescription)"
+        }
+    }
+
     func clearConfirmation() {
         confirmationMessage = nil
     }
