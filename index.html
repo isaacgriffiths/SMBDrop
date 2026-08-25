@@ -2,10 +2,101 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="refresh" content="0; url=support.html">
-<title>SMBDrop</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SMBDrop — send photos and files to your own NAS</title>
+<meta name="description" content="SMBDrop moves photos, videos and files between your iPhone and your own SMB shares. No account, no cloud, no subscription.">
+<link rel="icon" type="image/png" sizes="64x64" href="icon-64.png">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@600;700;800&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
 </head>
 <body>
-<p><a href="support.html">SMBDrop Support</a> · <a href="privacy.html">Privacy Policy</a></p>
+
+<header class="wrap">
+  <div class="nav">
+    <img src="icon-180.png" alt="" width="40" height="40">
+    <span class="name">SMBDrop</span>
+    <nav>
+      <a href="support.html">Support</a>
+      <a href="privacy.html">Privacy</a>
+      <a href="https://github.com/isaacgriffiths/SMBDrop">GitHub</a>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+  <div class="hero">
+    <div>
+      <h1 class="display">Your photos.<br>Straight to <span class="path mono">//your&#8209;nas</span>.</h1>
+      <p class="sub">SMBDrop moves photos, videos and files between your iPhone and your own SMB shares — NAS, Windows, macOS or Samba. No account. No cloud. No subscription.</p>
+      <div class="actions">
+        <span class="badge">Coming soon to the App&nbsp;Store</span>
+        <span class="hint">Requires iOS 17 and an SMB server on your network.</span>
+      </div>
+    </div>
+
+    <div class="ledger mono" role="img" aria-label="A transfer in progress: photos and videos uploading from an iPhone to the folder tank/photos on a local server">
+      <div class="dest"><span class="arrow">▲</span> Sending 4 items <span class="arrow">→</span> //tank/photos/2026</div>
+      <div class="row done r1"><span class="file">IMG_4021.HEIC</span><span class="bar"><i></i></span><span class="pct">3.9 MB</span></div>
+      <div class="row done r2"><span class="file">IMG_4022.HEIC</span><span class="bar"><i></i></span><span class="pct">4.1 MB</span></div>
+      <div class="row done r3"><span class="file">IMG_4023_LIVE.MOV</span><span class="bar"><i></i></span><span class="pct">11 MB</span></div>
+      <div class="row r4"><span class="file">Drone_flight_04.MP4</span><span class="bar"><i></i></span><span class="pct">2.1 GB</span></div>
+      <div class="foot">Original bytes, unchanged filenames. Queue survives interruptions.</div>
+    </div>
+  </div>
+
+  <section id="how">
+    <p class="eyebrow">How it works</p>
+    <h2 class="display">Three steps, then it just runs</h2>
+    <div class="steps">
+      <div class="step">
+        <h3>Connect a share</h3>
+        <p>Enter your server's address and sign-in. <strong>Find Shares</strong> lists the names your server actually exports — pick one instead of guessing. Custom ports supported.</p>
+      </div>
+      <div class="step">
+        <h3>Pick anything</h3>
+        <p>Photos and videos from your library — drag to select a range — or any file from the Files picker. Live Photos keep both halves.</p>
+      </div>
+      <div class="step">
+        <h3>Send, and walk away</h3>
+        <p>Transfers continue after you leave the app. Failed items wait in a durable queue and can be retried — nothing is lost silently.</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="features">
+    <p class="eyebrow">What you get</p>
+    <h2 class="display">Built for people who run their own storage</h2>
+    <div class="grid">
+      <div class="cell"><h3>Originals, untouched</h3><p>SMBDrop sends the exact bytes in your library. No recompression, no renamed files, no stripped metadata.</p></div>
+      <div class="cell"><h3>Import back</h3><p>Browse your shares and pull files onto your iPhone. Every import is verified byte-for-byte and never overwrites a local file.</p></div>
+      <div class="cell"><h3>An imports library</h3><p>Imported files stay in the app — preview, share, save media to Photos, or send them on to another share.</p></div>
+      <div class="cell"><h3>Keychain-only credentials</h3><p>Server passwords live in your iPhone's Keychain and nowhere else. Deleting a share deletes its password.</p></div>
+      <div class="cell"><h3>No middleman</h3><p>Transfers go device-to-server over your network. Your files never touch anyone else's infrastructure — including ours.</p></div>
+      <div class="cell"><h3>Works with your gear</h3><p>Synology, QNAP, TrueNAS, UGREEN and most NAS devices, plus Windows and macOS file sharing and Samba on Linux.</p></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="band">
+      <p class="mono-line">Data collected: none</p>
+      <h2>The privacy policy is one sentence long, more or less</h2>
+      <p>SMBDrop has no account system, no analytics and no tracking. There is nothing to collect and nowhere to send it. <a href="privacy.html">Read the policy</a>.</p>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap cols">
+    <span>© 2026 Isaac Griffiths</span>
+    <span class="spacer"></span>
+    <a href="support.html">Support</a>
+    <a href="privacy.html">Privacy Policy</a>
+    <a href="https://github.com/isaacgriffiths/SMBDrop/issues">Report an issue</a>
+  </div>
+</footer>
+
 </body>
 </html>
