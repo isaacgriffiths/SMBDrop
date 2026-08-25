@@ -1,0 +1,16 @@
+// Deploys the SMBDrop site to Cloudflare Workers: `npx wrangler deploy`
+// from this branch's checkout. smbdrop.com DNS + TLS are managed by the
+// custom-domain entries below. GitHub Pages serves this branch as a mirror.
+{
+  "name": "smbdrop-site",
+  "compatibility_date": "2026-08-25",
+  "assets": {
+    "directory": ".",
+    "html_handling": "auto-trailing-slash",
+    "not_found_handling": "404-page"
+  },
+  "routes": [
+    { "pattern": "smbdrop.com", "custom_domain": true },
+    { "pattern": "www.smbdrop.com", "custom_domain": true }
+  ]
+}
