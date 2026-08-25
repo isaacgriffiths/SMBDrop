@@ -1,0 +1,7 @@
+SMBDrop connects to the user's own SMB file server on their local network. It has no user accounts and no server of ours, so there is no demo login — the sign-in fields below are intentionally blank.
+
+To test with any Mac: System Settings → General → Sharing → enable File Sharing, then under the ⓘ options enable "Share files and folders using SMB" for a user account. In SMBDrop, go to Settings → add a share, enter the Mac's IP address, that user's username and password, tap "Find Shares" and pick a listed share, then "Test Connection" and save.
+
+You can then: send photos or videos from the Photos tab, send documents from the Files tab, and browse the share and download files back from the Import tab. Any Windows shared folder, Samba server, or NAS works the same way.
+
+The app requests Local Network permission (required to reach the SMB server) and Photos permission (to pick items to send, and add-only access to save imported media). Credentials are stored only in the device Keychain, and no data is collected.

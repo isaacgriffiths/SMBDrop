@@ -1,0 +1,1 @@
+smb,samba,nas,file transfer,network share,photo backup,server,upload,synology,windows,lan

@@ -1,0 +1,26 @@
+SMBDrop moves photos, videos and files between your iPhone and your own SMB network shares — a NAS, a Windows or macOS shared folder, or a Samba server. No account, no cloud, no subscription: transfers go straight from your phone to your server over your network.
+
+SEND
+• Pick photos and videos from your library — albums, multi-select and drag to select a range
+• Original quality: SMBDrop sends the original bytes, including both halves of a Live Photo
+• Choose any files with Apple's Files picker and send them unchanged
+• Transfers keep going after you leave the app, with live progress on supported devices
+• A durable queue survives interruptions — failed items can be retried, and nothing is lost silently
+
+IMPORT
+• Browse your shares' folders and download files onto your iPhone
+• Imports are verified byte-for-byte and never overwrite an existing file
+• Imported files stay available in the app: preview them, share them, save media to Photos, delete them, or send them on to another share
+• Everything lands in Files → On My iPhone, so other apps can use it too
+
+SET UP IN SECONDS
+• Enter your server's address and sign-in, then let Find Shares list the real share names — no guessing
+• Browse to the exact folder you want before saving
+• Custom ports are supported
+• Passwords are stored only in your iPhone's Keychain
+
+PRIVATE BY DESIGN
+• No account, no analytics, no tracking
+• Your files and credentials never touch a third-party server
+
+SMBDrop works with most NAS devices (Synology, QNAP, TrueNAS, UGREEN and others), Windows and macOS file sharing, and Samba on Linux. Requires an SMB server reachable from your network and iOS 17 or later.
