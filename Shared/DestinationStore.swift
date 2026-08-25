@@ -14,7 +14,7 @@ struct DestinationSummary: Codable, Equatable, Identifiable, Sendable {
         let server = destination.port == 445
             ? destination.host
             : "\(destination.host):\(destination.port)"
-        destination.subfolder.isEmpty
+        return destination.subfolder.isEmpty
             ? "//\(server)/\(destination.share)"
             : "//\(server)/\(destination.share)/\(destination.subfolder)"
     }
