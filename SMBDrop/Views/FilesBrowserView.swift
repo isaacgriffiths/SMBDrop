@@ -14,6 +14,7 @@ struct FilesBrowserView: View {
     @State private var exportError: String?
     @State private var previewURL: URL?
     @StateObject private var localImports = ImportedFileLibrary()
+    @AppStorage(SampleContent.defaultsKey) private var isSampleContentOn = false
 
     var body: some View {
         NavigationStack {
@@ -82,6 +83,10 @@ struct FilesBrowserView: View {
             }
             .navigationTitle("Files")
             .task { localImports.reload() }
+            .onChange(of: isSampleContentOn) {
+                files = []
+                localImports.reload()
+            }
             .safeAreaInset(edge: .bottom) {
                 if transferQueue.activeProgress != nil || !files.isEmpty {
                     VStack(spacing: 10) {

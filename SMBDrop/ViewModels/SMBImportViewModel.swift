@@ -18,6 +18,10 @@ final class SMBImportViewModel: ObservableObject {
         self.service = service
     }
 
+    private var activeService: any SMBImportServing {
+        SampleContent.isEnabled ? SampleImportService() : service
+    }
+
     var selectedCount: Int { selectedIDs.count }
     var isImporting: Bool { importProgress != nil }
     var canBrowseToParent: Bool { !currentPath.isEmpty && !isLoading && !isImporting }
@@ -102,7 +106,7 @@ final class SMBImportViewModel: ObservableObject {
         }
 
         do {
-            let urls = try await service.importItems(
+            let urls = try await activeService.importItems(
                 selection,
                 from: destinationID
             ) { progress in
@@ -131,7 +135,7 @@ final class SMBImportViewModel: ObservableObject {
         errorMessage = nil
         defer { isLoading = false }
         do {
-            items = try await service.contents(of: destinationID, at: currentPath)
+            items = try await activeService.contents(of: destinationID, at: currentPath)
             selectedIDs.formIntersection(Set(items.map(\.id)))
         } catch {
             items = []

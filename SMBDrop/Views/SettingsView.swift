@@ -6,12 +6,17 @@ struct SettingsView: View {
     @State private var destinationToRemove: DestinationSummary?
     @State private var blockedDestinationRemoval: DestinationSummary?
     @State private var destinationRemovalError: String?
+    @AppStorage(SampleContent.defaultsKey) private var isSampleContentOn = false
+
+    private var displayedDestinations: [DestinationSummary] {
+        isSampleContentOn ? SampleContent.destinations : viewModel.destinations
+    }
 
     var body: some View {
         NavigationStack {
             List {
                 Section {
-                    if viewModel.destinations.isEmpty {
+                    if displayedDestinations.isEmpty {
                         HStack(spacing: 14) {
                             settingsIcon("externaldrive.badge.plus", color: .blue)
                             VStack(alignment: .leading, spacing: 3) {
@@ -24,20 +29,23 @@ struct SettingsView: View {
                         }
                         .padding(.vertical, 4)
                     } else {
-                        ForEach(viewModel.destinations) { destination in
+                        ForEach(displayedDestinations) { destination in
                             Button {
                                 viewModel.beginEditing(destination)
                             } label: {
                                 destinationRow(destination)
                             }
+                            .disabled(isSampleContentOn)
                             .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                                Button("Delete", role: .destructive) {
-                                    requestRemoval(of: destination)
+                                if !isSampleContentOn {
+                                    Button("Delete", role: .destructive) {
+                                        requestRemoval(of: destination)
+                                    }
+                                    Button("Edit") {
+                                        viewModel.beginEditing(destination)
+                                    }
+                                    .tint(.blue)
                                 }
-                                Button("Edit") {
-                                    viewModel.beginEditing(destination)
-                                }
-                                .tint(.blue)
                             }
                         }
                     }
@@ -47,6 +55,7 @@ struct SettingsView: View {
                     } label: {
                         Label("Add SMB Share", systemImage: "plus.circle.fill")
                     }
+                    .disabled(isSampleContentOn)
                 } header: {
                     Text("SMB Shares")
                 } footer: {
@@ -70,7 +79,7 @@ struct SettingsView: View {
                     }
                 }
 
-                Section("App") {
+                Section {
                     NavigationLink {
                         AboutView()
                     } label: {
@@ -79,6 +88,16 @@ struct SettingsView: View {
                             Text("About SMBDrop")
                         }
                     }
+                    Toggle(isOn: $isSampleContentOn) {
+                        HStack(spacing: 14) {
+                            settingsIcon("sparkles.rectangle.stack.fill", color: .purple)
+                            Text("Sample Content")
+                        }
+                    }
+                } header: {
+                    Text("App")
+                } footer: {
+                    Text("Shows sample photos, files, shares, and transfers instead of your own — useful for screenshots. Real transfers pause while this is on.")
                 }
             }
             .navigationTitle("Settings")

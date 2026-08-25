@@ -11,11 +11,16 @@ struct ContentView: View {
     @StateObject private var destinations = DestinationSetupViewModel()
     @StateObject private var transferQueue = TransferQueueViewModel()
     @State private var selectedTab: SMBDropTab = .photos
+    @AppStorage(SampleContent.defaultsKey) private var isSampleContentOn = false
+
+    private var activeDestinations: [DestinationSummary] {
+        isSampleContentOn ? SampleContent.destinations : destinations.destinations
+    }
 
     var body: some View {
         TabView(selection: $selectedTab) {
             PhotoLibraryView(
-                destinations: destinations.destinations,
+                destinations: activeDestinations,
                 transferQueue: transferQueue,
                 selectedTab: $selectedTab
             )
@@ -23,7 +28,7 @@ struct ContentView: View {
             .tag(SMBDropTab.photos)
 
             FilesBrowserView(
-                destinations: destinations.destinations,
+                destinations: activeDestinations,
                 transferQueue: transferQueue,
                 selectedTab: $selectedTab
             )
@@ -31,7 +36,7 @@ struct ContentView: View {
             .tag(SMBDropTab.files)
 
             SMBImportView(
-                destinations: destinations.destinations,
+                destinations: activeDestinations,
                 selectedTab: $selectedTab
             )
             .tabItem { Label("Import", systemImage: "arrow.down.doc") }

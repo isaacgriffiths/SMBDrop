@@ -105,6 +105,16 @@ final class ImportedFileLibrary: ObservableObject {
     }
 
     func reload() {
+        if SampleContent.isEnabled {
+            do {
+                items = try SampleContent.importsCatalog().items()
+                errorMessage = nil
+            } catch {
+                items = []
+                errorMessage = error.localizedDescription
+            }
+            return
+        }
         guard let catalog else {
             items = []
             errorMessage = SMBImportError.importDirectoryUnavailable.localizedDescription

@@ -14,6 +14,7 @@ struct PhotoLibraryView: View {
     @State private var dragStartID: String?
     @State private var dragBaseSelection: Set<String> = []
     @State private var dragSelects = true
+    @AppStorage(SampleContent.defaultsKey) private var isSampleContentOn = false
 
     private let albumColumns = [
         GridItem(.flexible(), spacing: 14),
@@ -30,7 +31,7 @@ struct PhotoLibraryView: View {
     var body: some View {
         NavigationStack {
             Group {
-                switch library.authorizationStatus {
+                switch isSampleContentOn ? .authorized : library.authorizationStatus {
                 case .authorized, .limited:
                     if library.albums.isEmpty {
                         ContentUnavailableView(
@@ -85,6 +86,9 @@ struct PhotoLibraryView: View {
             }
             .task {
                 await library.requestAccess()
+            }
+            .onChange(of: isSampleContentOn) {
+                library.reloadContent()
             }
         }
     }

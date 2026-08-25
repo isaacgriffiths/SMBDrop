@@ -3,14 +3,47 @@ import Photos
 import UIKit
 
 struct PhotoLibraryItem: Identifiable {
-    let asset: PHAsset
+    enum Source {
+        case asset(PHAsset)
+        case sample(SampleContent.Photo)
+    }
 
-    var id: String { asset.localIdentifier }
-    var isVideo: Bool { asset.mediaType == .video }
+    let source: Source
+
+    init(asset: PHAsset) {
+        source = .asset(asset)
+    }
+
+    init(sample: SampleContent.Photo) {
+        source = .sample(sample)
+    }
+
+    var asset: PHAsset? {
+        if case .asset(let asset) = source { return asset }
+        return nil
+    }
+
+    var id: String {
+        switch source {
+        case .asset(let asset): asset.localIdentifier
+        case .sample(let photo): photo.id
+        }
+    }
+
+    var isVideo: Bool {
+        switch source {
+        case .asset(let asset): asset.mediaType == .video
+        case .sample(let photo): photo.isVideo
+        }
+    }
 
     var durationText: String? {
         guard isVideo else { return nil }
-        let duration = max(0, Int(asset.duration.rounded()))
+        let duration: Int
+        switch source {
+        case .asset(let asset): duration = max(0, Int(asset.duration.rounded()))
+        case .sample(let photo): duration = photo.durationSeconds
+        }
         return String(format: "%d:%02d", duration / 60, duration % 60)
     }
 }
@@ -73,7 +106,16 @@ final class PhotoLibraryViewModel: NSObject, ObservableObject, PHPhotoLibraryCha
         items.filter { selectedIDs.contains($0.id) }
     }
 
+    /// Re-runs content loading after the Sample Content toggle changes.
+    func reloadContent() {
+        reload()
+    }
+
     func requestAccess() async {
+        if SampleContent.isEnabled {
+            reload()
+            return
+        }
         if authorizationStatus == .notDetermined {
             authorizationStatus = await withCheckedContinuation {
                 (continuation: CheckedContinuation<PHAuthorizationStatus, Never>) in
@@ -101,7 +143,14 @@ final class PhotoLibraryViewModel: NSObject, ObservableObject, PHPhotoLibraryCha
 
     func openAlbum(_ album: PhotoLibraryAlbum) {
         selectedAlbumID = album.id
-        items = fetchItems(in: album.collection)
+        if SampleContent.isEnabled {
+            let sampleItems = SampleContent.photos.map { PhotoLibraryItem(sample: $0) }
+            items = album.id == "sample-videos"
+                ? sampleItems.filter(\.isVideo)
+                : sampleItems
+        } else {
+            items = fetchItems(in: album.collection)
+        }
         selectedIDs.formIntersection(Set(items.map(\.id)))
     }
 
@@ -133,14 +182,20 @@ final class PhotoLibraryViewModel: NSObject, ObservableObject, PHPhotoLibraryCha
     }
 
     func thumbnail(for item: PhotoLibraryItem, size: CGSize) async -> UIImage? {
-        await withCheckedContinuation {
+        guard case .asset(let asset) = item.source else {
+            if case .sample(let photo) = item.source {
+                return SampleContent.image(for: photo, size: size)
+            }
+            return nil
+        }
+        return await withCheckedContinuation {
             (continuation: CheckedContinuation<UIImage?, Never>) in
             let options = PHImageRequestOptions()
             options.deliveryMode = .highQualityFormat
             options.resizeMode = .fast
             options.isNetworkAccessAllowed = true
             imageManager.requestImage(
-                for: item.asset,
+                for: asset,
                 targetSize: size,
                 contentMode: .aspectFill,
                 options: options
@@ -159,7 +214,7 @@ final class PhotoLibraryViewModel: NSObject, ObservableObject, PHPhotoLibraryCha
         guard !selection.isEmpty else { return }
         isPreparing = true
         preparedCount = 0
-        let resources = selection.flatMap { resourcesToExport(for: $0.asset) }
+        let resources = selection.compactMap(\.asset).flatMap { resourcesToExport(for: $0) }
         resourceCount = resources.count
         let batchID = UUID()
         transferQueue.track(batchID: batchID)
@@ -199,6 +254,10 @@ final class PhotoLibraryViewModel: NSObject, ObservableObject, PHPhotoLibraryCha
     }
 
     private func reload() {
+        if SampleContent.isEnabled {
+            reloadSampleContent()
+            return
+        }
         let openAlbumID = selectedAlbumID
         let allAssets = fetchResult(in: nil)
         albums = loadAlbums(allAssets: allAssets)
@@ -212,6 +271,41 @@ final class PhotoLibraryViewModel: NSObject, ObservableObject, PHPhotoLibraryCha
         }
         let availableIDs = Set(albums.flatMap { $0.previewItems.map(\.id) } + items.map(\.id))
         selectedIDs.formIntersection(availableIDs)
+    }
+
+    private func reloadSampleContent() {
+        let sampleItems = SampleContent.photos.map { PhotoLibraryItem(sample: $0) }
+        let videoItems = sampleItems.filter(\.isVideo)
+        albums = [
+            PhotoLibraryAlbum(
+                id: "sample-recents",
+                title: "Recents",
+                itemCount: sampleItems.count,
+                previewItems: Array(sampleItems.prefix(4)),
+                collection: nil
+            ),
+            PhotoLibraryAlbum(
+                id: "sample-favourites",
+                title: "Favourites",
+                itemCount: 12,
+                previewItems: Array(sampleItems.dropFirst(6).prefix(4)),
+                collection: nil
+            ),
+            PhotoLibraryAlbum(
+                id: "sample-videos",
+                title: "Videos",
+                itemCount: videoItems.count,
+                previewItems: Array(videoItems.prefix(4)),
+                collection: nil
+            ),
+        ]
+        if let selectedAlbumID, albums.contains(where: { $0.id == selectedAlbumID }) {
+            items = selectedAlbumID == "sample-videos" ? videoItems : sampleItems
+        } else {
+            selectedAlbumID = nil
+            items = []
+        }
+        selectedIDs.formIntersection(Set(sampleItems.map(\.id)))
     }
 
     private func fetchItems(in collection: PHAssetCollection?) -> [PhotoLibraryItem] {

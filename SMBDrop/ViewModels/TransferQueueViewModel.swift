@@ -103,6 +103,11 @@ final class TransferQueueViewModel: ObservableObject {
     }
 
     func refresh() async {
+        if SampleContent.isEnabled {
+            transfers = SampleContent.transfers
+            destinationNames = SampleContent.destinationNames
+            return
+        }
         do {
             let outbox = try outboxFactory()
             transfers = try await outbox.transfers()
@@ -135,6 +140,13 @@ final class TransferQueueViewModel: ObservableObject {
     }
 
     private func performDrain() async {
+        // Sample Content pauses real queue work so screenshots show the
+        // sample history instead of the user's actual transfers.
+        if SampleContent.isEnabled {
+            transfers = SampleContent.transfers
+            destinationNames = SampleContent.destinationNames
+            return
+        }
         do {
             let outbox = try outboxFactory()
             let destinations = try destinationStore.loadAll()
