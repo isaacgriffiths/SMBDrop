@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SMBDrop — Support</title>
+<style>
+  body { font-family: -apple-system, "Segoe UI", Roboto, sans-serif; max-width: 680px; margin: 0 auto; padding: 24px 20px 60px; line-height: 1.6; color: #1c1c1e; }
+  h1 { font-size: 1.6em; } h2 { font-size: 1.15em; margin-top: 1.8em; }
+  a { color: #0a66c2; }
+  ol li, ul li { margin-bottom: 6px; }
+  @media (prefers-color-scheme: dark) { body { background: #111; color: #eee; } a { color: #6cb2ff; } }
+</style>
+</head>
+<body>
+<h1>SMBDrop Support</h1>
+
+<p>SMBDrop sends photos, videos, and files from your iPhone straight to your own SMB network shares — a NAS, a Windows or macOS shared folder, or a Samba server — and imports files back. No account, no cloud, no subscription.</p>
+
+<h2>Requirements</h2>
+<ul>
+  <li>iOS 17 or later.</li>
+  <li>An SMB server you can reach from your network: most NAS devices (Synology, QNAP, TrueNAS, UGREEN…), Windows file sharing, macOS file sharing with SMB enabled, or Samba on Linux.</li>
+  <li>The server's host name or IP address, share name, and a username and password.</li>
+</ul>
+
+<h2>Getting connected</h2>
+<ol>
+  <li>Open <strong>Settings</strong> in SMBDrop and add a share.</li>
+  <li>Enter the server's host name or IP address. The port is 445 unless your server uses a custom one.</li>
+  <li>Sign in with the server username and password, then use <strong>Find Shares</strong> to pick the share instead of typing it.</li>
+  <li>Optionally browse to a subfolder, then run <strong>Test Connection</strong> and save.</li>
+</ol>
+
+<h2>Common issues</h2>
+<ul>
+  <li><strong>Connection times out</strong> — check the iPhone is on the same network as the server and that iOS Settings → SMBDrop has Local Network enabled.</li>
+  <li><strong>Sign-in fails</strong> — re-enter the username and password; some servers need the plain username without a domain prefix.</li>
+  <li><strong>Share not found</strong> — use Find Shares to list the names the server actually exports; hidden ($) shares are not shown.</li>
+  <li><strong>Imports</strong> are saved on the iPhone under Files → On My iPhone → SMBDrop → SMBDrop Imports, and appear in SMBDrop's Files tab where you can preview, share, save media to Photos, or delete them.</li>
+</ul>
+
+<h2>Contact</h2>
+<p>Found a bug or need help? Open an issue on the <a href="https://github.com/isaacgriffiths/SMBDrop/issues">SMBDrop issue tracker</a> and it will be looked at.</p>
+
+<p><a href="privacy.html">Privacy Policy</a></p>
+</body>
+</html>
