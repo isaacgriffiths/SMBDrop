@@ -57,7 +57,10 @@ final class SMBImportServiceTests: XCTestCase {
 
         let localURL = try XCTUnwrap(imported.first)
         XCTAssertEqual(imported.count, 1)
-        XCTAssertEqual(localURL.deletingLastPathComponent(), fixture.importDirectory)
+        XCTAssertEqual(
+            localURL.deletingLastPathComponent().pathComponents,
+            fixture.importDirectory.pathComponents
+        )
         XCTAssertEqual(localURL.lastPathComponent, "clip.mov")
         XCTAssertEqual(try Data(contentsOf: localURL), payload)
         let importedDate = try localURL.resourceValues(
