@@ -3,6 +3,7 @@ import SwiftUI
 enum SMBDropTab: Hashable {
     case photos
     case files
+    case imports
     case settings
 }
 
@@ -28,6 +29,13 @@ struct ContentView: View {
             )
             .tabItem { Label("Files", systemImage: "folder") }
             .tag(SMBDropTab.files)
+
+            SMBImportView(
+                destinations: destinations.destinations,
+                selectedTab: $selectedTab
+            )
+            .tabItem { Label("Import", systemImage: "arrow.down.doc") }
+            .tag(SMBDropTab.imports)
 
             SettingsView(
                 viewModel: destinations,

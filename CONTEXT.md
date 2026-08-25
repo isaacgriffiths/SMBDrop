@@ -1,12 +1,13 @@
 # SMBDrop — Ubiquitous Language
 
-- **SMBDrop** — the app: a completely free iOS utility that sends photos, videos, and arbitrary files one-way from an iPhone to an SMB share. No accounts, no login, no payments.
+- **SMBDrop** — the app: a completely free iOS utility that sends photos, videos, and arbitrary files from an iPhone to an SMB share, and imports files from configured shares back to the iPhone. No accounts, no login, no payments.
 - **Destination** — a saved SMB share configuration: free-text host (IP or hostname), share name, optional subfolder, username + password (stored in the iOS Keychain).
 - **Transfer** — one file moving from device to Destination. Transfers run one item at a time ("chunked" per Isaac: a video, an image, or a file at a time).
 - **Share Extension** — the surface inside the iOS share sheet (Photos app → Share → SMBDrop). The reason the app exists.
-- **Main App** — the standalone surface: Photos, Files, and Settings tabs for in-app sending, transfer progress/history, and Destination management.
+- **Main App** — the standalone surface: Photos, Files, Import, and Settings tabs for sending, importing, transfer progress/history, and Destination management.
 - **Onboarding** — first-run flow: photo-library permission → Destination setup → Test Connection.
 - **Test Connection** — the explicit connect-and-verify step run against a Destination before it is trusted.
+- **Import** — one or more files downloaded from a configured Destination into the app's on-device `SMBDrop Imports` folder, visible in Files under On My iPhone.
 
 ## Destination decisions
 
@@ -31,8 +32,9 @@
 
 ## Main App source tabs
 
-- **Photos** is a permission-aware, Photos-style thumbnail grid for images and videos with native multi-selection. It stages original `PHAssetResource` bytes, including the paired video for a Live Photo.
-- **Files** launches Apple's native document picker with multi-selection, then stages security-scoped files without changing their bytes or names. UIKit requires a full document browser to be the app's root controller, so it cannot be embedded as one tab of SMBDrop's three-tab interface.
+- **Photos** opens with Recents and the device's Photos albums, then shows a three-column image/video grid with multi-selection, horizontal drag-range selection, and compact video-duration badges. It stages original `PHAssetResource` bytes, including the paired video for a Live Photo.
+- **Files** launches Apple's native document picker with multi-selection, then stages security-scoped files without changing their bytes or names. UIKit requires a full document browser to be the app's root controller, so it cannot be embedded inside SMBDrop's tab-based interface.
+- **Import** lists configured Destinations, browses each Destination from its configured subfolder, and downloads selected files one at a time into `Documents/SMBDrop Imports`. Imports stream to a unique partial file, verify byte count, preserve modification time, and never overwrite an existing local file. The app exposes its Documents directory in Files.
 - Photos and Files both present the same Destination picker and enqueue through the shared durable outbox.
 - On iOS 26 and later, a user-started Photos or Files export runs as a Continued Processing Task so SMB work can continue after the Main App backgrounds and the system shows progress in a Live Activity/Dynamic Island. Older iOS versions use the supported short background-completion window; anything still unfinished remains durable for the next foreground resume.
 

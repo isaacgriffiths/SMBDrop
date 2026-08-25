@@ -4,6 +4,11 @@ const shareController = readFileSync("ShareExtension/ShareViewController.swift",
 const contentView = readFileSync("SMBDrop/Views/ContentView.swift", "utf8");
 const setupView = readFileSync("SMBDrop/Views/DestinationEditorView.swift", "utf8");
 const photosView = readFileSync("SMBDrop/Views/PhotoLibraryView.swift", "utf8");
+const importView = readFileSync("SMBDrop/Views/SMBImportView.swift", "utf8");
+const importService = readFileSync(
+  "SMBDrop/Networking/SMBImportService.swift",
+  "utf8",
+);
 const filesView = readFileSync("SMBDrop/Views/FilesBrowserView.swift", "utf8");
 const settingsView = readFileSync("SMBDrop/Views/SettingsView.swift", "utf8");
 const transferActivityView = readFileSync(
@@ -40,11 +45,18 @@ if (/uploading arrives in the next build/i.test(shareController)) {
 if (!/Browse Folders/.test(setupView)) {
   throw new Error("Destination setup does not expose the folder browser.");
 }
-if (!/PhotoLibraryView/.test(contentView) || !/FilesBrowserView/.test(contentView) || !/SettingsView/.test(contentView)) {
-  throw new Error("The main app does not expose Photos, Files, and Settings tabs.");
+if (!/PhotoLibraryView/.test(contentView) || !/FilesBrowserView/.test(contentView)
+    || !/SMBImportView/.test(contentView) || !/SettingsView/.test(contentView)) {
+  throw new Error("The main app does not expose Photos, Files, Import, and Settings tabs.");
 }
-if (!/LazyVGrid/.test(photosView) || !/selectedIDs/.test(photosView)) {
-  throw new Error("The Photos tab is not a selectable photo-library grid.");
+if (!/RecentAlbumPreview/.test(photosView) || !/AlbumPreview/.test(photosView)
+    || !/setSelectionRange/.test(photosView) || !/VideoDurationBadge/.test(photosView)) {
+  throw new Error("The Photos tab is missing album browsing, drag selection, or video durations.");
+}
+if (!/Connected Shares/.test(importView) || !/Import .*Item/.test(importView)
+    || !/downloadItem/.test(importService) || !/fileAlreadyExists/.test(importService)
+    || !/SMBDrop Imports/.test(importService)) {
+  throw new Error("The Import tab does not safely browse and download from connected SMB shares.");
 }
 if (!/PHPhotoLibraryChangeObserver/.test(photoLibraryViewModel) || !/@objc\s+nonisolated\s+func\s+photoLibraryDidChange/.test(photoLibraryViewModel)) {
   throw new Error("The photo library model does not satisfy the Photos change-observer protocol.");
@@ -154,5 +166,8 @@ if (!/setAttributes/.test(uploader) || /uniqueFilename/.test(uploader)) {
 if (!/NSLocalNetworkUsageDescription/.test(extensionInfo)) {
   throw new Error("The share extension is missing its local-network privacy description.");
 }
+if (!/UIFileSharingEnabled/.test(appInfo) || !/LSSupportsOpeningDocumentsInPlace/.test(appInfo)) {
+  throw new Error("Imported files are not exposed in the Files app.");
+}
 
-console.log("Multi-share Photos, Files, and share-sheet uploads are wired end to end.");
+console.log("Albums, SMB imports, and multi-share uploads are wired end to end.");

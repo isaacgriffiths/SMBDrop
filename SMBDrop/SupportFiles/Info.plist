@@ -29,9 +29,13 @@
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>SMBDrop connects to your SMB share over your local network to send photos and files.</string>
+	<string>SMBDrop connects to your SMB shares over your local network to send and import files.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>SMBDrop shows your photo library so you can pick photos and videos to send to your SMB share.</string>
+	<string>SMBDrop shows your photo library and albums so you can pick photos and videos to send to your SMB share.</string>
+	<key>LSSupportsOpeningDocumentsInPlace</key>
+	<true/>
+	<key>UIFileSharingEnabled</key>
+	<true/>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

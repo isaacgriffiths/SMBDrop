@@ -15,10 +15,20 @@ struct PhotoLibraryItem: Identifiable {
     }
 }
 
+struct PhotoLibraryAlbum: Identifiable {
+    let id: String
+    let title: String
+    let itemCount: Int
+    let previewItems: [PhotoLibraryItem]
+    fileprivate let collection: PHAssetCollection?
+}
+
 @MainActor
 final class PhotoLibraryViewModel: NSObject, ObservableObject, PHPhotoLibraryChangeObserver {
     @Published private(set) var authorizationStatus: PHAuthorizationStatus
+    @Published private(set) var albums: [PhotoLibraryAlbum] = []
     @Published private(set) var items: [PhotoLibraryItem] = []
+    @Published private(set) var selectedAlbumID: String?
     @Published private(set) var selectedIDs: Set<String> = []
     @Published private(set) var isPreparing = false
     @Published private(set) var preparedCount = 0
@@ -46,6 +56,18 @@ final class PhotoLibraryViewModel: NSObject, ObservableObject, PHPhotoLibraryCha
     }
 
     var selectedCount: Int { selectedIDs.count }
+
+    var recentAlbum: PhotoLibraryAlbum? { albums.first }
+
+    var additionalAlbums: [PhotoLibraryAlbum] {
+        Array(albums.dropFirst())
+    }
+
+    var isShowingAlbums: Bool { selectedAlbumID == nil }
+
+    var selectedAlbumTitle: String {
+        albums.first(where: { $0.id == selectedAlbumID })?.title ?? "Photos"
+    }
 
     var selectedItems: [PhotoLibraryItem] {
         items.filter { selectedIDs.contains($0.id) }
@@ -75,6 +97,39 @@ final class PhotoLibraryViewModel: NSObject, ObservableObject, PHPhotoLibraryCha
 
     func clearSelection() {
         selectedIDs = []
+    }
+
+    func openAlbum(_ album: PhotoLibraryAlbum) {
+        selectedAlbumID = album.id
+        items = fetchItems(in: album.collection)
+        selectedIDs.formIntersection(Set(items.map(\.id)))
+    }
+
+    func closeAlbum() {
+        selectedAlbumID = nil
+        items = []
+        clearSelection()
+    }
+
+    func setSelectionRange(
+        from startID: String,
+        to endID: String,
+        selecting: Bool,
+        baseSelection: Set<String>
+    ) {
+        guard let start = items.firstIndex(where: { $0.id == startID }),
+              let end = items.firstIndex(where: { $0.id == endID }) else {
+            return
+        }
+        var selection = baseSelection
+        for item in items[min(start, end)...max(start, end)] {
+            if selecting {
+                selection.insert(item.id)
+            } else {
+                selection.remove(item.id)
+            }
+        }
+        selectedIDs = selection
     }
 
     func thumbnail(for item: PhotoLibraryItem, size: CGSize) async -> UIImage? {
@@ -144,6 +199,32 @@ final class PhotoLibraryViewModel: NSObject, ObservableObject, PHPhotoLibraryCha
     }
 
     private func reload() {
+        let openAlbumID = selectedAlbumID
+        let allAssets = fetchResult(in: nil)
+        albums = loadAlbums(allAssets: allAssets)
+        if let openAlbumID,
+           let openAlbum = albums.first(where: { $0.id == openAlbumID }) {
+            selectedAlbumID = openAlbumID
+            items = fetchItems(in: openAlbum.collection)
+        } else {
+            selectedAlbumID = nil
+            items = []
+        }
+        let availableIDs = Set(albums.flatMap { $0.previewItems.map(\.id) } + items.map(\.id))
+        selectedIDs.formIntersection(availableIDs)
+    }
+
+    private func fetchItems(in collection: PHAssetCollection?) -> [PhotoLibraryItem] {
+        let result = fetchResult(in: collection)
+        var loaded: [PhotoLibraryItem] = []
+        loaded.reserveCapacity(result.count)
+        result.enumerateObjects { asset, _, _ in
+            loaded.append(PhotoLibraryItem(asset: asset))
+        }
+        return loaded
+    }
+
+    private func fetchResult(in collection: PHAssetCollection?) -> PHFetchResult<PHAsset> {
         let options = PHFetchOptions()
         options.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
         options.predicate = NSPredicate(
@@ -151,14 +232,83 @@ final class PhotoLibraryViewModel: NSObject, ObservableObject, PHPhotoLibraryCha
             PHAssetMediaType.image.rawValue,
             PHAssetMediaType.video.rawValue
         )
-        let result = PHAsset.fetchAssets(with: options)
-        var loaded: [PhotoLibraryItem] = []
-        loaded.reserveCapacity(result.count)
-        result.enumerateObjects { asset, _, _ in
-            loaded.append(PhotoLibraryItem(asset: asset))
+        return collection.map { PHAsset.fetchAssets(in: $0, options: options) }
+            ?? PHAsset.fetchAssets(with: options)
+    }
+
+    private func loadAlbums(allAssets: PHFetchResult<PHAsset>) -> [PhotoLibraryAlbum] {
+        guard allAssets.count > 0 else { return [] }
+        var loaded = [
+            PhotoLibraryAlbum(
+                id: "smbdrop-recents",
+                title: "Recents",
+                itemCount: allAssets.count,
+                previewItems: previewItems(in: allAssets),
+                collection: nil
+            )
+        ]
+        var seenIDs: Set<String> = []
+        let smartCollections = PHAssetCollection.fetchAssetCollections(
+            with: .smartAlbum,
+            subtype: .any,
+            options: nil
+        )
+        let userCollections = PHAssetCollection.fetchAssetCollections(
+            with: .album,
+            subtype: .any,
+            options: nil
+        )
+        var collections: [PHAssetCollection] = []
+        for result in [smartCollections, userCollections] {
+            result.enumerateObjects { collection, _, _ in
+                guard collection.assetCollectionSubtype != .smartAlbumUserLibrary,
+                      collection.assetCollectionSubtype != .smartAlbumRecentlyAdded,
+                      seenIDs.insert(collection.localIdentifier).inserted else {
+                    return
+                }
+                collections.append(collection)
+            }
         }
-        items = loaded
-        selectedIDs.formIntersection(Set(loaded.map(\.id)))
+        collections.sort { lhs, rhs in
+            let left = Self.albumPriority(lhs.assetCollectionSubtype)
+            let right = Self.albumPriority(rhs.assetCollectionSubtype)
+            if left != right { return left < right }
+            return (lhs.localizedTitle ?? "")
+                .localizedCaseInsensitiveCompare(rhs.localizedTitle ?? "") == .orderedAscending
+        }
+
+        for collection in collections {
+            let assets = fetchResult(in: collection)
+            guard assets.count > 0 else { continue }
+            loaded.append(
+                PhotoLibraryAlbum(
+                    id: collection.localIdentifier,
+                    title: collection.localizedTitle ?? "Album",
+                    itemCount: assets.count,
+                    previewItems: previewItems(in: assets),
+                    collection: collection
+                )
+            )
+        }
+        return loaded
+    }
+
+    private func previewItems(in result: PHFetchResult<PHAsset>) -> [PhotoLibraryItem] {
+        (0..<min(4, result.count)).map {
+            PhotoLibraryItem(asset: result.object(at: $0))
+        }
+    }
+
+    private static func albumPriority(_ subtype: PHAssetCollectionSubtype) -> Int {
+        switch subtype {
+        case .smartAlbumFavorites: 0
+        case .smartAlbumVideos: 1
+        case .smartAlbumSelfPortraits: 2
+        case .smartAlbumScreenshots: 3
+        case .smartAlbumLivePhotos: 4
+        case .smartAlbumPanoramas: 5
+        default: 100
+        }
     }
 
     private func resourcesToExport(for asset: PHAsset) -> [(PHAsset, PHAssetResource)] {
