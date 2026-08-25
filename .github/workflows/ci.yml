@@ -4,6 +4,10 @@ name: CI
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - "fastlane/metadata/**"
+      - "fastlane/metadata_review_information.pending/**"
+      - ".github/workflows/metadata.yml"
   pull_request:
   workflow_dispatch:
 

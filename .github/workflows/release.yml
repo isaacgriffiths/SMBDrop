@@ -4,6 +4,10 @@ on:
   push:
     branches:
       - main
+    paths-ignore:
+      - "fastlane/metadata/**"
+      - "fastlane/metadata_review_information.pending/**"
+      - ".github/workflows/metadata.yml"
   workflow_dispatch:
 
 permissions:
