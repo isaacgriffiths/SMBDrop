@@ -5,17 +5,53 @@ final class DestinationTests: XCTestCase {
     func testValidDestinationProducesCanonicalConnectionValues() throws {
         let destination = try Destination(
             host: " nas.local ",
+            port: 1445,
             share: " Photos ",
             subfolder: " /iPhone Uploads/ ",
             username: " isaac "
         )
 
         XCTAssertEqual(destination.host, "nas.local")
+        XCTAssertEqual(destination.port, 1445)
         XCTAssertEqual(destination.share, "Photos")
         XCTAssertEqual(destination.subfolder, "iPhone Uploads")
         XCTAssertEqual(destination.username, "isaac")
-        XCTAssertEqual(destination.serverURL.absoluteString, "smb://nas.local")
+        XCTAssertEqual(destination.serverURL.absoluteString, "smb://nas.local:1445")
         XCTAssertEqual(destination.remotePath, "/iPhone Uploads")
+    }
+
+    func testLegacyDestinationWithoutPortDecodesUsingSMBDefault() throws {
+        let data = try XCTUnwrap(
+            """
+            {
+              "host": "nas.local",
+              "share": "Photos",
+              "subfolder": "",
+              "username": "isaac"
+            }
+            """.data(using: .utf8)
+        )
+
+        let destination = try JSONDecoder().decode(Destination.self, from: data)
+
+        XCTAssertEqual(destination.port, 445)
+        XCTAssertEqual(destination.serverURL.absoluteString, "smb://nas.local:445")
+    }
+
+    func testDestinationRejectsPortsOutsideTheTCPRange() {
+        for port in [0, 65_536] {
+            XCTAssertThrowsError(
+                try Destination(
+                    host: "nas.local",
+                    port: port,
+                    share: "Photos",
+                    subfolder: "",
+                    username: "isaac"
+                )
+            ) { error in
+                XCTAssertEqual(error as? Destination.ValidationError, .invalidPort)
+            }
+        }
     }
 
     func testSavedDestinationLoadsWithPasswordFromVault() throws {
@@ -27,6 +63,7 @@ final class DestinationTests: XCTestCase {
         let store = DestinationStore(defaults: defaults, passwordVault: passwordVault)
         let destination = try Destination(
             host: "nas.local",
+            port: 1445,
             share: "Photos",
             subfolder: "iPhone Uploads",
             username: "isaac"

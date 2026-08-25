@@ -2,6 +2,27 @@ import XCTest
 @testable import SMBDrop
 
 final class SMBConnectionTesterTests: XCTestCase {
+    func testConnectionProbesTheConfiguredPort() async throws {
+        let destination = try Destination(
+            host: "nas.local",
+            port: 1445,
+            share: "Photos",
+            subfolder: "",
+            username: "isaac"
+        )
+        let probe = RecordingTCPProbe()
+        let tester = SMBConnectionTester(
+            tcpProbe: probe,
+            sessionFactory: { _, _ in DisconnectFailingSMBSession() }
+        )
+
+        try await tester.testConnection(to: destination, password: "secret")
+
+        let connection = try XCTUnwrap(probe.connection)
+        XCTAssertEqual(connection.host, "nas.local")
+        XCTAssertEqual(connection.port, 1445)
+    }
+
     func testConnectionRejectsAFileAsTheConfiguredSubfolder() {
         XCTAssertThrowsError(
             try SMBConnectionTester.validateSubfolderAttributes([
@@ -122,6 +143,26 @@ final class SMBConnectionTesterTests: XCTestCase {
 
 private struct SuccessfulTCPProbe: TCPConnectionProbing {
     func connect(host: String, port: UInt16) async throws {}
+}
+
+private final class RecordingTCPProbe: TCPConnectionProbing, @unchecked Sendable {
+    struct Connection: Equatable {
+        let host: String
+        let port: UInt16
+    }
+
+    private let lock = NSLock()
+    private var recordedConnection: Connection?
+
+    var connection: Connection? {
+        lock.withLock { recordedConnection }
+    }
+
+    func connect(host: String, port: UInt16) async throws {
+        lock.withLock {
+            recordedConnection = Connection(host: host, port: port)
+        }
+    }
 }
 
 private final class TimingOutSMBSession: SMBConnectionSession {

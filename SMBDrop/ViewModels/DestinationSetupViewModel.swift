@@ -17,6 +17,7 @@ final class DestinationSetupViewModel: ObservableObject {
     }
 
     @Published var host = ""
+    @Published var port = "445"
     @Published var share = ""
     @Published var subfolder = ""
     @Published var username = ""
@@ -59,6 +60,7 @@ final class DestinationSetupViewModel: ObservableObject {
 
     var canTest: Bool {
         !host.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && parsedPort != nil
             && !share.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             && !username.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             && !password.isEmpty
@@ -71,6 +73,7 @@ final class DestinationSetupViewModel: ObservableObject {
 
     var canFindShares: Bool {
         !host.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && parsedPort != nil
             && !username.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             && !password.isEmpty
             && !isFindingShares
@@ -78,6 +81,7 @@ final class DestinationSetupViewModel: ObservableObject {
 
     var canBrowseFolders: Bool {
         !host.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && parsedPort != nil
             && !share.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             && !username.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             && !password.isEmpty
@@ -99,9 +103,12 @@ final class DestinationSetupViewModel: ObservableObject {
 
     var savedPath: String {
         guard let destination = savedDestination else { return "" }
+        let server = destination.port == 445
+            ? destination.host
+            : "\(destination.host):\(destination.port)"
         return destination.subfolder.isEmpty
-            ? "//\(destination.host)/\(destination.share)"
-            : "//\(destination.host)/\(destination.share)/\(destination.subfolder)"
+            ? "//\(server)/\(destination.share)"
+            : "//\(server)/\(destination.share)/\(destination.subfolder)"
     }
 
     func savedPath(for summary: DestinationSummary) -> String {
@@ -137,6 +144,7 @@ final class DestinationSetupViewModel: ObservableObject {
                 availableShares =
                     (try? await shareLister.availableShares(
                         host: form.host,
+                        port: form.destinationPort,
                         username: form.username,
                         password: form.password
                     )) ?? []
@@ -151,6 +159,7 @@ final class DestinationSetupViewModel: ObservableObject {
         do {
             let shares = try await shareLister.availableShares(
                 host: host,
+                port: parsedPort ?? 445,
                 username: username,
                 password: password
             )
@@ -272,6 +281,7 @@ final class DestinationSetupViewModel: ObservableObject {
 
     func beginAdding() {
         host = ""
+        port = "445"
         share = ""
         subfolder = ""
         username = ""
@@ -299,6 +309,7 @@ final class DestinationSetupViewModel: ObservableObject {
             }
             let destination = saved.destination
             host = destination.host
+            port = String(destination.port)
             share = destination.share
             subfolder = destination.subfolder
             username = destination.username
@@ -422,6 +433,7 @@ final class DestinationSetupViewModel: ObservableObject {
     private var currentForm: FormValues {
         FormValues(
             host: host,
+            port: port,
             share: share,
             subfolder: subfolder,
             username: username,
@@ -442,16 +454,38 @@ private enum DestinationRemovalError: LocalizedError {
                 + "Transfer recovery: \(outboxError.localizedDescription)"
         }
     }
+
+    private var parsedPort: UInt16? {
+        let value = port.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let integer = Int(value), let port = UInt16(exactly: integer), port > 0 else {
+            return nil
+        }
+        return port
+    }
 }
 
 private struct FormValues: Equatable {
     let host: String
+    let port: String
     let share: String
     let subfolder: String
     let username: String
     let password: String
 
+    var destinationPort: UInt16 {
+        UInt16(port.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 445
+    }
+
     func destination() throws -> Destination {
-        try Destination(host: host, share: share, subfolder: subfolder, username: username)
+        guard let port = Int(port.trimmingCharacters(in: .whitespacesAndNewlines)) else {
+            throw Destination.ValidationError.invalidPort
+        }
+        return try Destination(
+            host: host,
+            port: port,
+            share: share,
+            subfolder: subfolder,
+            username: username
+        )
     }
 }

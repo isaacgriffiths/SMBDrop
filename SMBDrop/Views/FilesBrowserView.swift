@@ -11,49 +11,88 @@ struct FilesBrowserView: View {
     @State private var isPreparing = false
     @State private var preparedCount = 0
     @State private var exportError: String?
+    @StateObject private var localImports = ImportedFileLibrary()
 
     var body: some View {
         NavigationStack {
             Group {
-                if files.isEmpty {
+                if files.isEmpty && localImports.items.isEmpty {
                     ContentUnavailableView {
-                        Label("Choose Files", systemImage: "folder.badge.plus")
+                        Label("No Files Yet", systemImage: "folder.badge.plus")
                     } description: {
-                        Text("Browse the Files app, select any documents, then send them to one of your SMB shares.")
+                        Text("Choose files from iCloud Drive, On My iPhone, or another provider. Imports will also appear here automatically.")
                     } actions: {
-                        Button("Browse Files") {
+                        Button("Choose Files") {
                             isShowingImporter = true
                         }
                         .buttonStyle(.borderedProminent)
                     }
                 } else {
                     List {
-                        Section("Selected") {
-                            ForEach(files) { file in
-                                HStack(spacing: 12) {
-                                    Image(systemName: file.symbolName)
-                                        .font(.title2)
-                                        .foregroundStyle(.tint)
-                                        .frame(width: 34)
-                                    VStack(alignment: .leading, spacing: 3) {
-                                        Text(file.name)
-                                            .lineLimit(1)
-                                        Text(file.detail)
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
+                        if !localImports.items.isEmpty {
+                            Section {
+                                ForEach(localImports.items) { item in
+                                    Button {
+                                        toggleFile(item.url)
+                                    } label: {
+                                        HStack(spacing: 12) {
+                                            ImportedFileThumbnail(
+                                                item: item,
+                                                size: CGSize(width: 42, height: 48)
+                                            )
+                                            .clipShape(
+                                                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                            )
+                                            VStack(alignment: .leading, spacing: 3) {
+                                                Text(item.name)
+                                                    .foregroundStyle(.primary)
+                                                    .lineLimit(1)
+                                                Text(item.detail)
+                                                    .font(.caption)
+                                                    .foregroundStyle(.secondary)
+                                                    .lineLimit(1)
+                                            }
+                                            Spacer()
+                                            Image(
+                                                systemName: isSelected(item.url)
+                                                    ? "checkmark.circle.fill"
+                                                    : "circle"
+                                            )
+                                            .font(.title3)
+                                            .foregroundStyle(
+                                                isSelected(item.url) ? Color.accentColor : .secondary
+                                            )
+                                        }
+                                        .contentShape(Rectangle())
                                     }
-                                    Spacer()
+                                }
+                            } header: {
+                                Text("In SMBDrop")
+                            } footer: {
+                                Text("Files imported from your SMB shares are ready to select again.")
+                            }
+                        }
+
+                        if !externalFiles.isEmpty {
+                            Section("Selected from Files") {
+                                ForEach(externalFiles) { file in
+                                    selectedFileRow(file)
+                                }
+                                .onDelete { offsets in
+                                    let ids = offsets.map { externalFiles[$0].id }
+                                    files.removeAll { ids.contains($0.id) }
                                 }
                             }
-                            .onDelete { offsets in
-                                files.remove(atOffsets: offsets)
-                            }
+                        }
 
+                        Section {
                             Button {
                                 isShowingImporter = true
                             } label: {
-                                Label("Add More Files", systemImage: "plus")
+                                Label("Choose from Files", systemImage: "folder.badge.plus")
                             }
+                        } footer: {
+                            Text("Opens Apple’s secure file picker for iCloud Drive, On My iPhone, and third-party providers.")
                         }
 
                         if isPreparing {
@@ -70,32 +109,44 @@ struct FilesBrowserView: View {
                 }
             }
             .navigationTitle("Files")
+            .task { localImports.reload() }
             .safeAreaInset(edge: .bottom) {
-                if transferQueue.activeProgress != nil {
-                    TransferActivityView(transferQueue: transferQueue)
-                        .padding(.horizontal)
-                        .padding(.vertical, 10)
-                        .background(.ultraThinMaterial)
+                if transferQueue.activeProgress != nil || !files.isEmpty {
+                    VStack(spacing: 10) {
+                        if transferQueue.activeProgress != nil {
+                            TransferActivityView(transferQueue: transferQueue)
+                        }
+                        if !files.isEmpty {
+                            Button {
+                                if destinations.isEmpty {
+                                    selectedTab = .settings
+                                } else {
+                                    isChoosingDestination = true
+                                }
+                            } label: {
+                                Label(
+                                    "Send \(files.count) Item\(files.count == 1 ? "" : "s")",
+                                    systemImage: "arrow.up.circle.fill"
+                                )
+                                .frame(maxWidth: .infinity)
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .disabled(isPreparing)
+                        }
+                    }
+                    .padding(.horizontal)
+                    .padding(.vertical, 10)
+                    .background(.ultraThinMaterial)
                 }
             }
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
+                ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         isShowingImporter = true
                     } label: {
-                        Label("Browse", systemImage: "folder")
+                        Label("Choose Files", systemImage: "folder.badge.plus")
                     }
-                }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Send \(files.count)") {
-                        if destinations.isEmpty {
-                            selectedTab = .settings
-                        } else {
-                            isChoosingDestination = true
-                        }
-                    }
-                    .fontWeight(.semibold)
-                    .disabled(files.isEmpty || isPreparing)
+                    .disabled(isPreparing)
                 }
             }
             .fileImporter(
@@ -133,11 +184,54 @@ struct FilesBrowserView: View {
     }
 
     private func appendFiles(_ urls: [URL]) {
-        let existing = Set(files.map { $0.url.standardizedFileURL })
-        files.append(contentsOf: urls.compactMap { url in
-            guard !existing.contains(url.standardizedFileURL) else { return nil }
-            return SelectedFile(url: url)
-        })
+        var existing = Set(files.map { $0.url.standardizedFileURL })
+        for url in urls where existing.insert(url.standardizedFileURL).inserted {
+            files.append(SelectedFile(url: url))
+        }
+    }
+
+    private var externalFiles: [SelectedFile] {
+        let localURLs = Set(localImports.items.map { $0.url.standardizedFileURL })
+        return files.filter { !localURLs.contains($0.url.standardizedFileURL) }
+    }
+
+    private func isSelected(_ url: URL) -> Bool {
+        files.contains { $0.url.standardizedFileURL == url.standardizedFileURL }
+    }
+
+    private func toggleFile(_ url: URL) {
+        if let index = files.firstIndex(where: {
+            $0.url.standardizedFileURL == url.standardizedFileURL
+        }) {
+            files.remove(at: index)
+        } else {
+            files.append(SelectedFile(url: url))
+        }
+    }
+
+    private func selectedFileRow(_ file: SelectedFile) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: file.symbolName)
+                .font(.title2)
+                .foregroundStyle(.tint)
+                .frame(width: 34)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(file.name)
+                    .lineLimit(1)
+                Text(file.detail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            Button {
+                files.removeAll { $0.id == file.id }
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Remove \(file.name)")
+        }
     }
 
     private func sendFiles(to destination: DestinationSummary) async {
@@ -174,8 +268,9 @@ struct FilesBrowserView: View {
 }
 
 private struct SelectedFile: Identifiable {
-    let id = UUID()
     let url: URL
+
+    var id: URL { url.standardizedFileURL }
 
     var name: String { url.lastPathComponent }
 

@@ -32,6 +32,8 @@
 	<string>SMBDrop connects to your SMB shares over your local network to send and import files.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>SMBDrop shows your photo library and albums so you can pick photos and videos to send to your SMB share.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>SMBDrop can save imported photos and videos to your photo library when you ask it to.</string>
 	<key>LSSupportsOpeningDocumentsInPlace</key>
 	<true/>
 	<key>UIFileSharingEnabled</key>

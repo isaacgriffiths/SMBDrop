@@ -12,11 +12,17 @@ struct SettingsView: View {
             List {
                 Section {
                     if viewModel.destinations.isEmpty {
-                        ContentUnavailableView(
-                            "No SMB Shares",
-                            systemImage: "externaldrive.badge.plus",
-                            description: Text("Add the network folders you want to send photos and files to.")
-                        )
+                        HStack(spacing: 14) {
+                            settingsIcon("externaldrive.badge.plus", color: .blue)
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text("No SMB Shares")
+                                    .font(.headline)
+                                Text("Add a network folder to start sending and importing files.")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .padding(.vertical, 4)
                     } else {
                         ForEach(viewModel.destinations) { destination in
                             Button {
@@ -47,39 +53,35 @@ struct SettingsView: View {
                     Text("You will choose one of these shares each time you export.")
                 }
 
-                if transferQueue.activeProgress != nil {
-                    Section("Current Transfer") {
-                        TransferActivityView(transferQueue: transferQueue)
-                            .listRowInsets(EdgeInsets())
-                            .listRowBackground(Color.clear)
-                    }
-                }
-
-                if !transferQueue.transfers.isEmpty {
-                    Section("Transfer History") {
-                        ForEach(transferQueue.transfers.reversed()) { transfer in
-                            transferRow(transfer)
+                Section("Transfers") {
+                    NavigationLink {
+                        TransferHistoryView(transferQueue: transferQueue)
+                    } label: {
+                        HStack(spacing: 14) {
+                            settingsIcon("clock.arrow.circlepath", color: .orange)
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text("Transfer History")
+                                    .foregroundStyle(.primary)
+                                Text(transferSummary)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
                         }
                     }
                 }
 
-                Section("About") {
-                    LabeledContent("App", value: "SMBDrop")
-                    Label("Passwords stay in this iPhone's Keychain.", systemImage: "lock.fill")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .navigationTitle("Settings")
-            .toolbar {
-                ToolbarItem(placement: .primaryAction) {
-                    Button {
-                        viewModel.beginAdding()
+                Section("App") {
+                    NavigationLink {
+                        AboutView()
                     } label: {
-                        Label("Add SMB Share", systemImage: "plus")
+                        HStack(spacing: 14) {
+                            settingsIcon("info.circle.fill", color: .blue)
+                            Text("About SMBDrop")
+                        }
                     }
                 }
             }
+            .navigationTitle("Settings")
             .sheet(
                 isPresented: Binding(
                     get: { viewModel.isEditing },
@@ -151,6 +153,28 @@ struct SettingsView: View {
         }
     }
 
+    private var transferSummary: String {
+        if let progress = transferQueue.activeProgress, !progress.isComplete {
+            return "Sending · \(progress.countText)"
+        }
+        let failedCount = transferQueue.transfers.filter { $0.status == .failed }.count
+        if failedCount > 0 {
+            return "\(failedCount) failed item\(failedCount == 1 ? "" : "s") need attention"
+        }
+        let completedCount = transferQueue.transfers.filter { $0.status == .completed }.count
+        return completedCount == 0
+            ? "No completed transfers"
+            : "\(completedCount) completed transfer\(completedCount == 1 ? "" : "s")"
+    }
+
+    private func settingsIcon(_ name: String, color: Color) -> some View {
+        Image(systemName: name)
+            .font(.body.weight(.semibold))
+            .foregroundStyle(.white)
+            .frame(width: 30, height: 30)
+            .background(color.gradient, in: RoundedRectangle(cornerRadius: 7))
+    }
+
     private func destinationRow(_ destination: DestinationSummary) -> some View {
         HStack(spacing: 14) {
             Image(systemName: "externaldrive.fill.badge.checkmark")
@@ -176,78 +200,6 @@ struct SettingsView: View {
                 .foregroundStyle(.tertiary)
         }
         .padding(.vertical, 4)
-    }
-
-    private func transferRow(_ transfer: Transfer) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Image(systemName: transferIcon(transfer.status))
-                    .foregroundStyle(transferColor(transfer.status))
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(transfer.remoteFilename ?? transfer.filename)
-                        .lineLimit(1)
-                    if let destination = transferQueue.destinationName(for: transfer) {
-                        Text(destination)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                Spacer()
-                Text(transferStatus(transfer.status))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            if let error = transfer.errorMessage, transfer.status == .failed {
-                Text(error)
-                    .font(.caption)
-                    .foregroundStyle(.red)
-                Button("Retry") {
-                    Task { await transferQueue.retry(transfer.id) }
-                }
-                Button("Remove from Queue", role: .destructive) {
-                    Task { await transferQueue.remove(transfer.id) }
-                }
-            } else if transfer.status == .completed {
-                Button("Remove from History", role: .destructive) {
-                    Task { await transferQueue.remove(transfer.id) }
-                }
-                .font(.caption)
-            } else if transfer.status == .queued,
-                      transfer.destinationID.flatMap({ transferQueue.destinationNames[$0] }) == nil {
-                Button("Remove Unavailable Item", role: .destructive) {
-                    Task { await transferQueue.remove(transfer.id) }
-                }
-                .font(.caption)
-            }
-        }
-    }
-
-    private func transferIcon(_ status: Transfer.Status) -> String {
-        switch status {
-        case .queued: "clock"
-        case .uploading: "arrow.up.circle.fill"
-        case .failed: "exclamationmark.triangle.fill"
-        case .completed: "checkmark.circle.fill"
-        }
-    }
-
-    private func transferColor(_ status: Transfer.Status) -> Color {
-        switch status {
-        case .queued: .secondary
-        case .uploading: .accentColor
-        case .failed: .red
-        case .completed: .green
-        }
-    }
-
-    private func transferStatus(_ status: Transfer.Status) -> String {
-        switch status {
-        case .queued: "Queued"
-        case .uploading: "Sending"
-        case .failed: "Failed"
-        case .completed: "Uploaded"
-        }
     }
 
     private func requestRemoval(of destination: DestinationSummary) {

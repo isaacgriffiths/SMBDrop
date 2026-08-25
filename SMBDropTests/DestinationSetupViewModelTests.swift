@@ -151,7 +151,12 @@ private struct FailingConnectionTester: DestinationConnectionTesting {
 private struct FakeShareLister: DestinationShareListing {
     let shares: [String]
 
-    func availableShares(host: String, username: String, password: String) async throws -> [String] {
+    func availableShares(
+        host: String,
+        port: UInt16,
+        username: String,
+        password: String
+    ) async throws -> [String] {
         shares
     }
 }

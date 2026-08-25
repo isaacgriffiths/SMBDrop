@@ -2,7 +2,12 @@ import AMSMB2
 import Foundation
 
 protocol DestinationShareListing {
-    func availableShares(host: String, username: String, password: String) async throws -> [String]
+    func availableShares(
+        host: String,
+        port: UInt16,
+        username: String,
+        password: String
+    ) async throws -> [String]
 }
 
 // Lists the disk shares a server exposes so users can tap one instead of
@@ -14,9 +19,14 @@ struct SMBShareLister: DestinationShareListing {
         self.tcpProbe = tcpProbe
     }
 
-    func availableShares(host: String, username: String, password: String) async throws -> [String] {
+    func availableShares(
+        host: String,
+        port: UInt16,
+        username: String,
+        password: String
+    ) async throws -> [String] {
         let host = try Destination.validatedHost(host)
-        try await tcpProbe.connect(host: host, port: 445)
+        try await tcpProbe.connect(host: host, port: port)
 
         let credential = URLCredential(
             user: username.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -24,7 +34,7 @@ struct SMBShareLister: DestinationShareListing {
             persistence: .forSession
         )
         guard
-            let url = URL(string: "smb://\(host)"),
+            let url = URL(string: "smb://\(host):\(port)"),
             let manager = SMB2Manager(url: url, credential: credential)
         else {
             throw SMBConnectionError.invalidServer

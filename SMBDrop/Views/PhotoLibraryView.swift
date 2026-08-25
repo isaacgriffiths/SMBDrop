@@ -23,6 +23,8 @@ struct PhotoLibraryView: View {
         GridItem(.flexible(), spacing: 1),
         GridItem(.flexible(), spacing: 1),
         GridItem(.flexible(), spacing: 1),
+        GridItem(.flexible(), spacing: 1),
+        GridItem(.flexible(), spacing: 1),
     ]
 
     var body: some View {
@@ -165,7 +167,7 @@ struct PhotoLibraryView: View {
                             Color.clear.preference(
                                 key: PhotoFramePreferenceKey.self,
                                 value: [
-                                    item.id: proxy.frame(in: .named("SMBDropPhotoGrid")),
+                                    item.id: proxy.frame(in: .global),
                                 ]
                             )
                         }
@@ -182,41 +184,39 @@ struct PhotoLibraryView: View {
                 }
             }
         }
-        .coordinateSpace(name: "SMBDropPhotoGrid")
         .onPreferenceChange(PhotoFramePreferenceKey.self) { photoFrames = $0 }
-        .simultaneousGesture(dragSelectionGesture)
+        .background {
+            PhotoDragSelectionBridge(
+                isEnabled: isSelecting,
+                onBegan: beginDragSelection,
+                onChanged: continueDragSelection,
+                onEnded: endDragSelection
+            )
+        }
         .background(Color(uiColor: .systemBackground))
     }
 
-    private var dragSelectionGesture: some Gesture {
-        DragGesture(minimumDistance: 10, coordinateSpace: .named("SMBDropPhotoGrid"))
-            .onChanged { value in
-                guard isSelecting,
-                      abs(value.translation.width) > abs(value.translation.height),
-                      abs(value.translation.width) > 10 else {
-                    return
-                }
-                if dragStartID == nil {
-                    guard let startID = photoID(at: value.startLocation) else { return }
-                    dragStartID = startID
-                    dragBaseSelection = library.selectedIDs
-                    dragSelects = !dragBaseSelection.contains(startID)
-                }
-                guard let dragStartID,
-                      let endID = photoID(at: value.location) else {
-                    return
-                }
-                library.setSelectionRange(
-                    from: dragStartID,
-                    to: endID,
-                    selecting: dragSelects,
-                    baseSelection: dragBaseSelection
-                )
-            }
-            .onEnded { _ in
-                dragStartID = nil
-                dragBaseSelection = []
-            }
+    private func beginDragSelection(at point: CGPoint) {
+        guard isSelecting, let startID = photoID(at: point) else { return }
+        dragStartID = startID
+        dragBaseSelection = library.selectedIDs
+        dragSelects = !dragBaseSelection.contains(startID)
+        continueDragSelection(at: point)
+    }
+
+    private func continueDragSelection(at point: CGPoint) {
+        guard let dragStartID, let endID = photoID(at: point) else { return }
+        library.setSelectionRange(
+            from: dragStartID,
+            to: endID,
+            selecting: dragSelects,
+            baseSelection: dragBaseSelection
+        )
+    }
+
+    private func endDragSelection() {
+        dragStartID = nil
+        dragBaseSelection = []
     }
 
     private func photoID(at point: CGPoint) -> String? {
@@ -441,12 +441,6 @@ private struct PhotoGridCell: View {
                         .scaledToFill()
                 } else {
                     ProgressView()
-                }
-
-                if isSelected {
-                    Color.accentColor.opacity(0.12)
-                    Rectangle()
-                        .stroke(Color.white, lineWidth: 3)
                 }
 
                 VStack {

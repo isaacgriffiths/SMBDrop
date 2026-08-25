@@ -28,7 +28,7 @@ struct SMBConnectionTester: DestinationConnectionTesting {
     }
 
     func testConnection(to destination: Destination, password: String) async throws {
-        try await tcpProbe.connect(host: destination.host, port: 445)
+        try await tcpProbe.connect(host: destination.host, port: destination.port)
 
         guard let session = sessionFactory(destination, password) else {
             throw SMBConnectionError.invalidServer

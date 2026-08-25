@@ -12,11 +12,11 @@
 ## Destination decisions
 
 - SMBDrop saves multiple Destinations. Each can be tested, edited, or removed from Settings, and every export explicitly chooses one.
-- A Destination uses a host name or IP address, share name, optional subfolder, username, and password. Port 445 and SMB dialect selection remain implicit.
+- A Destination uses a host name or IP address, TCP port, share name, optional subfolder, username, and password. Port 445 is the default; SMB dialect selection remains implicit.
 - The non-secret fields live in the shared App Group. The password lives in the iOS Keychain and is never stored in preferences or logs.
 - Save is available only after Test Connection succeeds for the exact current field values. Editing any value requires another test.
 - Test Connection opens the share and verifies the configured subfolder. Failures are translated into friendly authentication, timeout, reachability, and missing-path messages.
-- **Find Shares** — with host and sign-in filled, SMBDrop enumerates the server's visible disk shares (srvsvc over IPC$, hidden `$` shares excluded) so the user taps a real share instead of typing one; a lone share auto-fills the field. When a test fails because the share is missing, the suggestions load automatically beside the error. Mirrors PhotoSync and the Files app, and exists because typed share names were the dominant setup failure.
+- **Find Shares** — with host, port, and sign-in filled, SMBDrop enumerates the server's visible disk shares (srvsvc over IPC$, hidden `$` shares excluded) so the user taps a real share instead of typing one; a lone share auto-fills the field. When a test fails because the share is missing, the suggestions load automatically beside the error. Mirrors PhotoSync and the Files app, and exists because typed share names were the dominant setup failure.
 
 ## Transfer contract (v1)
 
@@ -34,8 +34,9 @@
 
 - **Photos** opens with Recents and the device's Photos albums, then shows a three-column image/video grid with multi-selection, horizontal drag-range selection, and compact video-duration badges. It stages original `PHAssetResource` bytes, including the paired video for a Live Photo.
 - **Files** launches Apple's native document picker with multi-selection, then stages security-scoped files without changing their bytes or names. UIKit requires a full document browser to be the app's root controller, so it cannot be embedded inside SMBDrop's tab-based interface.
-- **Import** lists configured Destinations, browses each Destination from its configured subfolder, and downloads selected files one at a time into `Documents/SMBDrop Imports`. Imports stream to a unique partial file, verify byte count, preserve modification time, and never overwrite an existing local file. The app exposes its Documents directory in Files.
+- **Import** lists configured Destinations, browses each Destination from its configured subfolder, and downloads selected files one at a time into `Documents/SMBDrop Imports`. Imports stream to a unique partial file, verify byte count, preserve modification time, and never overwrite an existing local file. Past imports remain browsable in the app with media thumbnails, file metadata, Quick Look, Share Sheet actions, and Save to Photos for compatible images and videos. The app exposes its Documents directory in Files.
 - Photos and Files both present the same Destination picker and enqueue through the shared durable outbox.
+- The Files tab lists files already held by SMBDrop for immediate selection and uses Apple's document picker to add files from iCloud Drive, On My iPhone, and third-party providers; UIKit does not permit embedding that picker as the tab's root browser.
 - On iOS 26 and later, a user-started Photos or Files export runs as a Continued Processing Task so SMB work can continue after the Main App backgrounds and the system shows progress in a Live Activity/Dynamic Island. Older iOS versions use the supported short background-completion window; anything still unfinished remains durable for the next foreground resume.
 
 ## Share Extension architecture

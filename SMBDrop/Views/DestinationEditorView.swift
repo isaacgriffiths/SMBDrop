@@ -26,31 +26,35 @@ struct DestinationEditorView: View {
                     .padding(.vertical, 4)
                 }
 
-                Section("Server") {
+                Section {
                     TextField("Host or IP address", text: $viewModel.host)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                         .keyboardType(.URL)
                         .textContentType(.URL)
-                    TextField("Share name", text: $viewModel.share)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                    TextField("Subfolder (optional)", text: $viewModel.subfolder)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-
-                    Button {
-                        isShowingFolderBrowser = true
-                        Task { await viewModel.beginFolderBrowsing() }
-                    } label: {
-                        HStack {
-                            Label("Browse Folders", systemImage: "folder")
-                            Spacer()
-                            if viewModel.isLoadingFolders { ProgressView() }
-                        }
+                    LabeledContent("Port") {
+                        TextField("445", text: $viewModel.port)
+                            .multilineTextAlignment(.trailing)
+                            .keyboardType(.numberPad)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
                     }
-                    .disabled(!viewModel.canBrowseFolders)
+                } header: {
+                    Text("Server")
+                } footer: {
+                    Text("Most SMB servers use port 445.")
+                }
 
+                Section("Sign In") {
+                    TextField("Username", text: $viewModel.username)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .textContentType(.username)
+                    SecureField("Password", text: $viewModel.password)
+                        .textContentType(.password)
+                }
+
+                Section {
                     Button {
                         Task { await viewModel.findShares() }
                     } label: {
@@ -76,15 +80,29 @@ struct DestinationEditorView: View {
                             }
                         }
                     }
-                }
 
-                Section("Sign In") {
-                    TextField("Username", text: $viewModel.username)
+                    TextField("Share name", text: $viewModel.share)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
-                        .textContentType(.username)
-                    SecureField("Password", text: $viewModel.password)
-                        .textContentType(.password)
+                    TextField("Subfolder (optional)", text: $viewModel.subfolder)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+
+                    Button {
+                        isShowingFolderBrowser = true
+                        Task { await viewModel.beginFolderBrowsing() }
+                    } label: {
+                        HStack {
+                            Label("Browse Folders", systemImage: "folder")
+                            Spacer()
+                            if viewModel.isLoadingFolders { ProgressView() }
+                        }
+                    }
+                    .disabled(!viewModel.canBrowseFolders)
+                } header: {
+                    Text("Share Folder")
+                } footer: {
+                    Text("The share name is the real folder exported by your SMB server, not a label used only by SMBDrop.")
                 }
 
                 Section {

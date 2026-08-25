@@ -306,7 +306,11 @@ struct SMBImportService {
     }
 
     private static func defaultImportDirectory() throws -> URL {
-        guard let documents = FileManager.default.urls(
+        try defaultImportDirectory(fileManager: .default)
+    }
+
+    static func defaultImportDirectory(fileManager: FileManager) throws -> URL {
+        guard let documents = fileManager.urls(
             for: .documentDirectory,
             in: .userDomainMask
         ).first else {

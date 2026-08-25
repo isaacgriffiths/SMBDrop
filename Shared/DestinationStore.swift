@@ -11,9 +11,12 @@ struct DestinationSummary: Codable, Equatable, Identifiable, Sendable {
     }
 
     var displayPath: String {
+        let server = destination.port == 445
+            ? destination.host
+            : "\(destination.host):\(destination.port)"
         destination.subfolder.isEmpty
-            ? "//\(destination.host)/\(destination.share)"
-            : "//\(destination.host)/\(destination.share)/\(destination.subfolder)"
+            ? "//\(server)/\(destination.share)"
+            : "//\(server)/\(destination.share)/\(destination.subfolder)"
     }
 }
 
