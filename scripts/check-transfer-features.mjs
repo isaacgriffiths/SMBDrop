@@ -64,7 +64,7 @@ if (!/PHPhotoLibraryChangeObserver/.test(photoLibraryViewModel) || !/@objc\s+non
 if (!/fileImporter/.test(filesView) || !/allowsMultipleSelection: true/.test(filesView)) {
   throw new Error("The Files tab does not use the native multi-select document picker.");
 }
-if (!/Add SMB Share/.test(settingsView) || !/ForEach\(viewModel\.destinations\)/.test(settingsView)) {
+if (!/Add SMB Share/.test(settingsView) || !/ForEach\(displayedDestinations\)/.test(settingsView)) {
   throw new Error("Settings does not list and add multiple SMB shares.");
 }
 if (!/ForEach\(removableTransfers\)/.test(transferActivityView)
