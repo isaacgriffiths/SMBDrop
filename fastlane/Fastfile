@@ -106,8 +106,10 @@ platform :ios do
       app_identifier: bundle_id,
       app_version: ENV.fetch("APP_MARKETING_VERSION", "1.0"),
       metadata_path: "./fastlane/metadata",
+      screenshots_path: "./fastlane/screenshots",
       skip_binary_upload: true,
-      skip_screenshots: true,
+      skip_screenshots: false,
+      overwrite_screenshots: true,
       run_precheck_before_submit: false,
       force: true
     )
