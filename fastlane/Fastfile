@@ -100,11 +100,33 @@ platform :ios do
 
     # Runs before deliver: deliver aborts until the app's review detail
     # record exists, and the privacy declaration must not be held up by it.
-    upload_app_privacy_details_to_app_store(
-      api_key: key,
-      app_identifier: bundle_id,
-      json_path: "./fastlane/privacy_details.json"
+    # upload_app_privacy_details_to_app_store only supports Apple ID login,
+    # so this replicates its "Data Not Collected" path with the API token.
+    Spaceship::ConnectAPI.token = Spaceship::ConnectAPI::Token.from(hash: key)
+    app = Spaceship::ConnectAPI::App.find(bundle_id)
+    UI.user_error!("App #{bundle_id} not found") unless app
+
+    Spaceship::ConnectAPI::AppDataUsage.all(
+      app_id: app.id,
+      includes: "category,grouping,purpose,dataProtection",
+      limit: 500
+    ).each(&:delete!)
+
+    Spaceship::ConnectAPI::AppDataUsage.create(
+      app_id: app.id,
+      app_data_usage_category_id: nil,
+      app_data_usage_protection_id:
+        Spaceship::ConnectAPI::AppDataUsageDataProtection::ID::DATA_NOT_COLLECTED,
+      app_data_usage_purpose_id: nil
     )
+
+    publish_state = Spaceship::ConnectAPI::AppDataUsagesPublishState.get(app_id: app.id)
+    if publish_state.published
+      UI.important("App data usage is already published")
+    else
+      publish_state.publish!
+      UI.important("App data usage is now published")
+    end
 
     deliver(
       api_key: key,
