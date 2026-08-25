@@ -112,6 +112,7 @@ final class ImportedFileLibrary: ObservableObject {
         }
         do {
             items = try catalog.items()
+            errorMessage = nil
         } catch {
             items = []
             errorMessage = error.localizedDescription

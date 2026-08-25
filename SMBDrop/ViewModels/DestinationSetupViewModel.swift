@@ -430,6 +430,14 @@ final class DestinationSetupViewModel: ObservableObject {
         isLoadingFolders = false
     }
 
+    private var parsedPort: UInt16? {
+        let value = port.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let integer = Int(value), let port = UInt16(exactly: integer), port > 0 else {
+            return nil
+        }
+        return port
+    }
+
     private var currentForm: FormValues {
         FormValues(
             host: host,
@@ -453,14 +461,6 @@ private enum DestinationRemovalError: LocalizedError {
                 + "Password cleanup: \(storageError.localizedDescription) "
                 + "Transfer recovery: \(outboxError.localizedDescription)"
         }
-    }
-
-    private var parsedPort: UInt16? {
-        let value = port.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let integer = Int(value), let port = UInt16(exactly: integer), port > 0 else {
-            return nil
-        }
-        return port
     }
 }
 

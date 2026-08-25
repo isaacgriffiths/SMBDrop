@@ -12,6 +12,7 @@
 ## Destination decisions
 
 - SMBDrop saves multiple Destinations. Each can be tested, edited, or removed from Settings, and every export explicitly chooses one.
+- Settings is organized as a root list of saved shares plus focused detail screens: Transfer History (live progress, per-item retry/remove, clear-completed) and About (privacy summary, version, third-party notices).
 - A Destination uses a host name or IP address, TCP port, share name, optional subfolder, username, and password. Port 445 is the default; SMB dialect selection remains implicit.
 - The non-secret fields live in the shared App Group. The password lives in the iOS Keychain and is never stored in preferences or logs.
 - Save is available only after Test Connection succeeds for the exact current field values. Editing any value requires another test.
@@ -32,7 +33,7 @@
 
 ## Main App source tabs
 
-- **Photos** opens with Recents and the device's Photos albums, then shows a three-column image/video grid with multi-selection, horizontal drag-range selection, and compact video-duration badges. It stages original `PHAssetResource` bytes, including the paired video for a Live Photo.
+- **Photos** opens with Recents and the device's Photos albums, then shows a five-column image/video grid with multi-selection, horizontal drag-range selection, and compact video-duration badges. It stages original `PHAssetResource` bytes, including the paired video for a Live Photo.
 - **Files** launches Apple's native document picker with multi-selection, then stages security-scoped files without changing their bytes or names. UIKit requires a full document browser to be the app's root controller, so it cannot be embedded inside SMBDrop's tab-based interface.
 - **Import** lists configured Destinations, browses each Destination from its configured subfolder, and downloads selected files one at a time into `Documents/SMBDrop Imports`. Imports stream to a unique partial file, verify byte count, preserve modification time, and never overwrite an existing local file. Past imports remain browsable in the app with media thumbnails, file metadata, Quick Look, Share Sheet actions, and Save to Photos for compatible images and videos. The app exposes its Documents directory in Files.
 - Photos and Files both present the same Destination picker and enqueue through the shared durable outbox.
