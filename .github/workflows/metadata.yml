@@ -27,3 +27,5 @@ jobs:
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
           ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+          # deliver's checksum-based screenshot sync is still flagged as beta.
+          FASTLANE_ENABLE_BETA_DELIVER_SYNC_SCREENSHOTS: "1"
