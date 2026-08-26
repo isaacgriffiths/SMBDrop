@@ -1,0 +1,17 @@
+// Feedback relay for SMBDrop: the in-app "Request a Feature" form POSTs here,
+// and this Worker forwards it as an email through Resend.
+//
+// Deploy:  npx wrangler deploy          (from this directory)
+// Secret:  npx wrangler secret put RESEND_API_KEY
+{
+	"name": "smbdrop-feedback",
+	"main": "src/index.js",
+	"compatibility_date": "2025-08-01",
+	"observability": {
+		"enabled": true
+	},
+	"vars": {
+		"FEEDBACK_TO": "max@wynbrothers.com",
+		"FEEDBACK_FROM": "SMBDrop <noreply@isaacgriffiths.com>"
+	}
+}

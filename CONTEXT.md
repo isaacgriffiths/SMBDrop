@@ -5,7 +5,9 @@
 - **Transfer** — one file moving from device to Destination. Transfers run one item at a time ("chunked" per Isaac: a video, an image, or a file at a time).
 - **Share Extension** — the surface inside the iOS share sheet (Photos app → Share → SMBDrop). The reason the app exists.
 - **Main App** — the standalone surface: Photos, Files, Import, and Settings tabs for sending, importing, transfer progress/history, and Destination management.
-- **Onboarding** — first-run flow: photo-library permission → Destination setup → Test Connection.
+- **Onboarding** — first-run full-screen flow: welcome → how sending works (tabs + share sheet) → add-first-Destination using the same verified editor as Settings, with a Set Up Later escape. Shown only while no Destination exists and never again after completion (`hasCompletedOnboarding`).
+- **Review prompt** — the native StoreKit rating panel is requested once, ~1.5s after the user's first successful Import (`hasRequestedReview`), never during Sample Content.
+- **Feature requests** — Settings › Request a Feature posts to the `smbdrop-feedback` Cloudflare Worker (`feedback-worker/`), which emails Isaac via Resend; if the relay fails the form offers a mailto fallback.
 - **Test Connection** — the explicit connect-and-verify step run against a Destination before it is trusted.
 - **Import** — one or more files downloaded from a configured Destination into the app's on-device `SMBDrop Imports` folder, visible in Files under On My iPhone.
 

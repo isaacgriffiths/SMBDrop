@@ -1,9 +1,13 @@
+import StoreKit
 import SwiftUI
 
 struct SMBImportView: View {
     let destinations: [DestinationSummary]
     @Binding var selectedTab: SMBDropTab
     @StateObject private var viewModel = SMBImportViewModel()
+    @Environment(\.requestReview) private var requestReview
+    @AppStorage("hasRequestedReview") private var hasRequestedReview = false
+    @AppStorage(SampleContent.defaultsKey) private var isSampleContentOn = false
 
     var body: some View {
         NavigationStack {
@@ -32,6 +36,23 @@ struct SMBImportView: View {
             } message: {
                 Text(viewModel.errorMessage ?? "Unknown error")
             }
+            .onChange(of: viewModel.importedURLs) {
+                requestReviewAfterFirstImport()
+            }
+        }
+    }
+
+    /// The user's first successful import is the moment the app has proven
+    /// itself, so that is when the one-time system rating panel appears.
+    private func requestReviewAfterFirstImport() {
+        guard !viewModel.importedURLs.isEmpty,
+              !hasRequestedReview,
+              !isSampleContentOn else { return }
+        hasRequestedReview = true
+        Task {
+            // Let the "Imported" confirmation land before asking.
+            try? await Task.sleep(for: .seconds(1.5))
+            requestReview()
         }
     }
 

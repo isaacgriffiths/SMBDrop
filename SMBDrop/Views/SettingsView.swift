@@ -81,6 +81,19 @@ struct SettingsView: View {
 
                 Section("App") {
                     NavigationLink {
+                        FeedbackView()
+                    } label: {
+                        HStack(spacing: 14) {
+                            settingsIcon("paperplane.fill", color: .green)
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text("Request a Feature")
+                                Text("Or report a problem — goes straight to the developer.")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                    NavigationLink {
                         AboutView()
                     } label: {
                         HStack(spacing: 14) {

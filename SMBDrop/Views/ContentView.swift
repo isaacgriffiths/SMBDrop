@@ -12,6 +12,8 @@ struct ContentView: View {
     @StateObject private var transferQueue = TransferQueueViewModel()
     @State private var selectedTab: SMBDropTab = .photos
     @AppStorage(SampleContent.defaultsKey) private var isSampleContentOn = false
+    @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
+    @State private var isShowingOnboarding = false
 
     private var activeDestinations: [DestinationSummary] {
         isSampleContentOn ? SampleContent.destinations : destinations.destinations
@@ -51,6 +53,22 @@ struct ContentView: View {
         }
         .task {
             await transferQueue.resume()
+        }
+        .onAppear {
+            guard !hasCompletedOnboarding else { return }
+            if destinations.destinations.isEmpty {
+                isShowingOnboarding = true
+            } else {
+                // A share already exists (pre-onboarding install), so this
+                // user needs no introduction.
+                hasCompletedOnboarding = true
+            }
+        }
+        .fullScreenCover(isPresented: $isShowingOnboarding) {
+            OnboardingView(destinations: destinations) {
+                hasCompletedOnboarding = true
+                isShowingOnboarding = false
+            }
         }
     }
 }
