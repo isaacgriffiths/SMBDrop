@@ -3,6 +3,10 @@ import SwiftUI
 struct SettingsView: View {
     @ObservedObject var viewModel: DestinationSetupViewModel
     @ObservedObject var transferQueue: TransferQueueViewModel
+    /// While onboarding's full-screen cover is up it presents the share editor
+    /// itself; this sheet must stay unmounted or the two presentations fight
+    /// and SwiftUI dismisses both immediately.
+    var isOnboardingActive = false
     @State private var destinationToRemove: DestinationSummary?
     @State private var blockedDestinationRemoval: DestinationSummary?
     @State private var destinationRemovalError: String?
@@ -106,9 +110,9 @@ struct SettingsView: View {
             .navigationTitle("Settings")
             .sheet(
                 isPresented: Binding(
-                    get: { viewModel.isEditing },
+                    get: { viewModel.isEditing && !isOnboardingActive },
                     set: { isPresented in
-                        if !isPresented { viewModel.cancelEditing() }
+                        if !isPresented && !isOnboardingActive { viewModel.cancelEditing() }
                     }
                 )
             ) {

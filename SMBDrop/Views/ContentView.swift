@@ -46,7 +46,8 @@ struct ContentView: View {
 
             SettingsView(
                 viewModel: destinations,
-                transferQueue: transferQueue
+                transferQueue: transferQueue,
+                isOnboardingActive: isShowingOnboarding
             )
             .tabItem { Label("Settings", systemImage: "gearshape") }
             .tag(SMBDropTab.settings)

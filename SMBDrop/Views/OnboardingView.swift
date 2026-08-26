@@ -1,7 +1,9 @@
 import SwiftUI
 
-/// First-run flow: explains the app in two screens, then walks straight into
-/// adding the first SMB share with the same verified editor Settings uses.
+/// First-run flow: two short screens explaining the app, then a required
+/// add-your-first-share step using the same verified editor Settings uses.
+/// Every step is written to fit on screen without scrolling at default type
+/// sizes; the ScrollView only kicks in at accessibility sizes.
 struct OnboardingView: View {
     @ObservedObject var destinations: DestinationSetupViewModel
     let onFinished: () -> Void
@@ -13,6 +15,7 @@ struct OnboardingView: View {
     }
 
     @State private var step: Step = .welcome
+    @State private var isShowingShareEditor = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var hasConnectedShare: Bool {
@@ -23,30 +26,34 @@ struct OnboardingView: View {
         VStack(spacing: 0) {
             header
 
-            Group {
-                switch step {
-                case .welcome: welcomeStep
-                case .howItWorks: howItWorksStep
-                case .connect: connectStep
+            ScrollView {
+                Group {
+                    switch step {
+                    case .welcome: welcomeStep
+                    case .howItWorks: howItWorksStep
+                    case .connect: connectStep
+                    }
                 }
+                .padding(.horizontal, 24)
+                .padding(.top, 8)
+                .padding(.bottom, 16)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .scrollBounceBehavior(.basedOnSize)
         }
         .safeAreaInset(edge: .bottom) {
             footer
         }
         .background(Color(.systemGroupedBackground))
-        .sheet(
-            isPresented: Binding(
-                get: { destinations.isEditing },
-                set: { isPresented in
-                    if !isPresented { destinations.cancelEditing() }
-                }
-            )
-        ) {
+        .sheet(isPresented: $isShowingShareEditor) {
             DestinationEditorView(viewModel: destinations)
         }
-        .interactiveDismissDisabled()
+        .onChange(of: isShowingShareEditor) {
+            // A swipe-down leaves the shared editing state dangling; clear it
+            // so Settings opens cleanly later.
+            if !isShowingShareEditor, destinations.isEditing {
+                destinations.cancelEditing()
+            }
+        }
     }
 
     // MARK: - Chrome
@@ -64,29 +71,24 @@ struct OnboardingView: View {
             Spacer()
             if step != .connect {
                 Button("Skip") {
-                    advance()
+                    withAnimation(stepAnimation) { step = .connect }
                 }
                 .foregroundStyle(.secondary)
             }
         }
         .font(.body)
         .padding(.horizontal, 20)
-        .padding(.top, 16)
+        .padding(.top, 12)
         .frame(minHeight: 44)
     }
 
     @ViewBuilder
     private var footer: some View {
-        VStack(spacing: 14) {
+        VStack(spacing: 12) {
             pageIndicator
 
             switch step {
-            case .welcome:
-                Button("Continue") { advance() }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.large)
-                    .frame(maxWidth: .infinity)
-            case .howItWorks:
+            case .welcome, .howItWorks:
                 Button("Continue") { advance() }
                     .buttonStyle(.borderedProminent)
                     .controlSize(.large)
@@ -100,23 +102,19 @@ struct OnboardingView: View {
                 } else {
                     Button {
                         destinations.beginAdding()
+                        isShowingShareEditor = true
                     } label: {
                         Label("Add My First Share", systemImage: "plus.circle.fill")
                             .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.borderedProminent)
                     .controlSize(.large)
-
-                    Button("Set Up Later in Settings") { onFinished() }
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .frame(minHeight: 44)
                 }
             }
         }
         .padding(.horizontal, 20)
-        .padding(.top, 12)
-        .padding(.bottom, 8)
+        .padding(.top, 10)
+        .padding(.bottom, 6)
         .background(.ultraThinMaterial)
     }
 
@@ -148,173 +146,149 @@ struct OnboardingView: View {
     // MARK: - Steps
 
     private var welcomeStep: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 28) {
-                VStack(spacing: 14) {
-                    Image(systemName: "externaldrive.connected.to.line.below.fill")
-                        .font(.system(size: 44, weight: .medium))
-                        .foregroundStyle(.white)
-                        .frame(width: 84, height: 84)
-                        .background(
-                            Color.accentColor.gradient,
-                            in: RoundedRectangle(cornerRadius: 20, style: .continuous)
-                        )
-                    Text("Welcome to SMBDrop")
-                        .font(.largeTitle.bold())
-                        .multilineTextAlignment(.center)
-                    Text("Move photos, videos, and files between this iPhone and your own network storage.")
-                        .font(.body)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.top, 20)
-
-                VStack(alignment: .leading, spacing: 24) {
-                    featureRow(
-                        symbol: "photo.on.rectangle.angled",
-                        color: .blue,
-                        title: "Send to Your Server",
-                        detail: "Pick photos or files and send the original bytes straight to any SMB share — a NAS, a Windows share, or a home server."
+        VStack(alignment: .leading, spacing: 24) {
+            VStack(spacing: 10) {
+                Image(systemName: "externaldrive.connected.to.line.below.fill")
+                    .font(.system(size: 32, weight: .medium))
+                    .foregroundStyle(.white)
+                    .frame(width: 64, height: 64)
+                    .background(
+                        Color.accentColor.gradient,
+                        in: RoundedRectangle(cornerRadius: 15, style: .continuous)
                     )
-                    featureRow(
-                        symbol: "arrow.down.doc.fill",
-                        color: .green,
-                        title: "Import Back",
-                        detail: "Browse your shares from the Import tab and save files onto this iPhone."
-                    )
-                    featureRow(
-                        symbol: "lock.shield.fill",
-                        color: .indigo,
-                        title: "Private by Design",
-                        detail: "No account, no cloud. Transfers go directly to your server and passwords stay in the iPhone's Keychain."
-                    )
-                }
-                .padding(.horizontal, 4)
+                Text("Welcome to SMBDrop")
+                    .font(.title.bold())
+                    .multilineTextAlignment(.center)
+                Text("Move photos and files between this iPhone and your own storage.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
             }
-            .padding(.horizontal, 24)
-            .padding(.bottom, 24)
+            .frame(maxWidth: .infinity)
+
+            VStack(alignment: .leading, spacing: 18) {
+                featureRow(
+                    symbol: "photo.on.rectangle.angled",
+                    color: .blue,
+                    title: "Send to Your Server",
+                    detail: "Originals go straight to your NAS or any SMB share."
+                )
+                featureRow(
+                    symbol: "arrow.down.doc.fill",
+                    color: .green,
+                    title: "Import Back",
+                    detail: "Save files from your shares onto this iPhone."
+                )
+                featureRow(
+                    symbol: "lock.shield.fill",
+                    color: .indigo,
+                    title: "Private by Design",
+                    detail: "No account, no cloud — passwords stay in your Keychain."
+                )
+            }
+            .padding(.horizontal, 4)
         }
     }
 
     private var howItWorksStep: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 28) {
-                VStack(spacing: 10) {
-                    Image(systemName: "square.and.arrow.up.circle.fill")
-                        .font(.system(size: 52, weight: .medium))
-                        .foregroundStyle(.tint)
-                        .symbolRenderingMode(.hierarchical)
-                    Text("Send From Anywhere")
-                        .font(.largeTitle.bold())
-                        .multilineTextAlignment(.center)
-                    Text("Three steps, from any app on your iPhone.")
-                        .font(.body)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.top, 20)
-
-                VStack(alignment: .leading, spacing: 20) {
-                    numberedRow(
-                        number: 1,
-                        title: "Pick your files",
-                        detail: "Use the Photos or Files tab here — or tap Share in any app and choose SMBDrop from the share sheet."
-                    )
-                    numberedRow(
-                        number: 2,
-                        title: "Choose a share",
-                        detail: "Every export asks which of your saved SMB shares the files should go to."
-                    )
-                    numberedRow(
-                        number: 3,
-                        title: "Done",
-                        detail: "Files upload one at a time with their original names, and never overwrite anything on your server. Progress and history live in Settings."
-                    )
-                }
-                .padding(18)
-                .background(
-                    Color(.secondarySystemGroupedBackground),
-                    in: RoundedRectangle(cornerRadius: 20, style: .continuous)
-                )
-
-                Label {
-                    Text("Tip: in Photos, tap Share on any picture and SMBDrop is right there in the share sheet.")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                } icon: {
-                    Image(systemName: "lightbulb.fill")
-                        .foregroundStyle(.yellow)
-                }
-                .padding(.horizontal, 4)
+        VStack(alignment: .leading, spacing: 24) {
+            VStack(spacing: 10) {
+                Image(systemName: "square.and.arrow.up.circle.fill")
+                    .font(.system(size: 44, weight: .medium))
+                    .foregroundStyle(.tint)
+                    .symbolRenderingMode(.hierarchical)
+                Text("Send From Anywhere")
+                    .font(.title.bold())
+                    .multilineTextAlignment(.center)
+                Text("Three steps, from any app on your iPhone.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
             }
-            .padding(.horizontal, 24)
-            .padding(.bottom, 24)
+            .frame(maxWidth: .infinity)
+
+            VStack(alignment: .leading, spacing: 16) {
+                numberedRow(
+                    number: 1,
+                    title: "Pick your files",
+                    detail: "Photos, Files, or the Share button in any app."
+                )
+                numberedRow(
+                    number: 2,
+                    title: "Choose a share",
+                    detail: "Every send asks where the files should go."
+                )
+                numberedRow(
+                    number: 3,
+                    title: "Done",
+                    detail: "Originals upload safely and never overwrite."
+                )
+            }
+            .padding(16)
+            .background(
+                Color(.secondarySystemGroupedBackground),
+                in: RoundedRectangle(cornerRadius: 18, style: .continuous)
+            )
         }
     }
 
     private var connectStep: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 28) {
-                VStack(spacing: 10) {
-                    Image(
-                        systemName: hasConnectedShare
-                            ? "checkmark.circle.fill"
-                            : "externaldrive.badge.plus"
-                    )
-                    .font(.system(size: 52, weight: .medium))
-                    .foregroundStyle(hasConnectedShare ? Color.green : Color.accentColor)
-                    .symbolRenderingMode(.hierarchical)
-                    .contentTransition(.symbolEffect(.replace))
+        VStack(alignment: .leading, spacing: 20) {
+            VStack(spacing: 10) {
+                Image(
+                    systemName: hasConnectedShare
+                        ? "checkmark.circle.fill"
+                        : "externaldrive.badge.plus"
+                )
+                .font(.system(size: 44, weight: .medium))
+                .foregroundStyle(hasConnectedShare ? Color.green : Color.accentColor)
+                .symbolRenderingMode(.hierarchical)
+                .contentTransition(.symbolEffect(.replace))
 
-                    Text(hasConnectedShare ? "You're Connected" : "Connect Your Share")
-                        .font(.largeTitle.bold())
-                        .multilineTextAlignment(.center)
-
-                    Text(
-                        hasConnectedShare
-                            ? "Your SMB share is saved and verified. You're ready to send and import files."
-                            : "Add the SMB share you want to send files to. SMBDrop tests the connection before saving, so it only saves details that work."
-                    )
-                    .font(.body)
-                    .foregroundStyle(.secondary)
+                Text(hasConnectedShare ? "You're Connected" : "Connect Your Share")
+                    .font(.title.bold())
                     .multilineTextAlignment(.center)
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.top, 20)
 
-                if hasConnectedShare {
-                    connectedShareCard
-                } else {
-                    VStack(alignment: .leading, spacing: 20) {
-                        checklistRow(
-                            symbol: "network",
-                            text: "The server's address on your network, like 192.168.1.20 or nas.local"
-                        )
-                        checklistRow(
-                            symbol: "person.badge.key.fill",
-                            text: "The username and password for the share"
-                        )
-                        checklistRow(
-                            symbol: "magnifyingglass",
-                            text: "Not sure of the share name? Find Shares lists them for you."
-                        )
-                    }
-                    .padding(18)
-                    .background(
-                        Color(.secondarySystemGroupedBackground),
-                        in: RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    )
-
-                    Text("Works with Synology, QNAP, TrueNAS, Windows shared folders, and any Samba server.")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                        .padding(.horizontal, 4)
-                }
+                Text(
+                    hasConnectedShare
+                        ? "Your SMB share is saved and verified. You're ready to send and import files."
+                        : "SMBDrop tests the connection before saving. Have these ready:"
+                )
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
             }
-            .padding(.horizontal, 24)
-            .padding(.bottom, 24)
+            .frame(maxWidth: .infinity)
+
+            if hasConnectedShare {
+                connectedShareCard
+            } else {
+                VStack(alignment: .leading, spacing: 14) {
+                    checklistRow(
+                        symbol: "network",
+                        text: "Your server's address — like 192.168.1.20 or nas.local"
+                    )
+                    checklistRow(
+                        symbol: "person.badge.key.fill",
+                        text: "The share's username and password"
+                    )
+                    checklistRow(
+                        symbol: "magnifyingglass",
+                        text: "Unsure of the share name? Find Shares lists them."
+                    )
+                }
+                .padding(16)
+                .background(
+                    Color(.secondarySystemGroupedBackground),
+                    in: RoundedRectangle(cornerRadius: 18, style: .continuous)
+                )
+
+                Text("Works with Synology, QNAP, TrueNAS, Windows, and Samba.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity)
+                    .multilineTextAlignment(.center)
+            }
         }
     }
 
@@ -340,10 +314,10 @@ struct OnboardingView: View {
                 }
                 Spacer()
             }
-            .padding(18)
+            .padding(16)
             .background(
                 Color(.secondarySystemGroupedBackground),
-                in: RoundedRectangle(cornerRadius: 20, style: .continuous)
+                in: RoundedRectangle(cornerRadius: 18, style: .continuous)
             )
         }
     }
@@ -351,17 +325,17 @@ struct OnboardingView: View {
     // MARK: - Rows
 
     private func featureRow(symbol: String, color: Color, title: String, detail: String) -> some View {
-        HStack(alignment: .top, spacing: 16) {
+        HStack(alignment: .top, spacing: 14) {
             Image(systemName: symbol)
-                .font(.title2.weight(.medium))
+                .font(.title3.weight(.medium))
                 .foregroundStyle(color)
-                .frame(width: 40, height: 40)
+                .frame(width: 32, height: 32)
                 .symbolRenderingMode(.hierarchical)
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: 2) {
                 Text(title)
                     .font(.subheadline.weight(.semibold))
                 Text(detail)
-                    .font(.subheadline)
+                    .font(.footnote)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -369,18 +343,18 @@ struct OnboardingView: View {
     }
 
     private func numberedRow(number: Int, title: String, detail: String) -> some View {
-        HStack(alignment: .top, spacing: 14) {
+        HStack(alignment: .top, spacing: 12) {
             Text("\(number)")
-                .font(.subheadline.weight(.bold))
+                .font(.footnote.weight(.bold))
                 .monospacedDigit()
                 .foregroundStyle(.white)
-                .frame(width: 28, height: 28)
+                .frame(width: 24, height: 24)
                 .background(Color.accentColor.gradient, in: Circle())
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: 2) {
                 Text(title)
                     .font(.subheadline.weight(.semibold))
                 Text(detail)
-                    .font(.subheadline)
+                    .font(.footnote)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -388,13 +362,13 @@ struct OnboardingView: View {
     }
 
     private func checklistRow(symbol: String, text: String) -> some View {
-        HStack(alignment: .top, spacing: 14) {
+        HStack(alignment: .top, spacing: 12) {
             Image(systemName: symbol)
-                .font(.body.weight(.medium))
+                .font(.subheadline.weight(.medium))
                 .foregroundStyle(.tint)
-                .frame(width: 28, height: 28)
+                .frame(width: 24, height: 24)
             Text(text)
-                .font(.subheadline)
+                .font(.footnote)
                 .foregroundStyle(.primary)
                 .fixedSize(horizontal: false, vertical: true)
         }
