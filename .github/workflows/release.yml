@@ -7,6 +7,8 @@ on:
     paths-ignore:
       - "fastlane/metadata/**"
       - "fastlane/metadata_review_information.pending/**"
+      - "fastlane/screenshots/**"
+      - "marketing/**"
       - ".github/workflows/metadata.yml"
   workflow_dispatch:
 
