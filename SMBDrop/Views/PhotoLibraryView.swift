@@ -449,19 +449,25 @@ private struct PhotoGridCell: View {
                     ProgressView()
                 }
 
+                // The duration badge owns the top-right corner and the
+                // selection circle the bottom-right, so neither ever
+                // squeezes the other in a narrow grid cell.
                 VStack {
-                    HStack(alignment: .top) {
-                        if showsSelection {
-                            selectionCircle
-                        }
+                    HStack {
                         Spacer()
                         if let duration = item.durationText {
                             VideoDurationBadge(duration: duration)
                         }
                     }
-                    .padding(6)
                     Spacer()
+                    if showsSelection {
+                        HStack {
+                            Spacer()
+                            selectionCircle
+                        }
+                    }
                 }
+                .padding(6)
             }
             .clipped()
             .task(id: item.id) {
@@ -501,7 +507,9 @@ private struct VideoDurationBadge: View {
             Text(duration)
                 .font(.caption2.weight(.semibold))
                 .monospacedDigit()
+                .lineLimit(1)
         }
+        .fixedSize()
         .foregroundStyle(.white)
         .padding(.horizontal, 5)
         .padding(.vertical, 3)
