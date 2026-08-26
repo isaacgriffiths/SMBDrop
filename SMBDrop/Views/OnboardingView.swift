@@ -1,9 +1,11 @@
+import Photos
 import SwiftUI
 
-/// First-run flow: two short screens explaining the app, then a required
-/// add-your-first-share step using the same verified editor Settings uses.
-/// Every step is written to fit on screen without scrolling at default type
-/// sizes; the ScrollView only kicks in at accessibility sizes.
+/// First-run flow: short screens explaining the app and requesting photo
+/// access, then a required add-your-first-share step using the same verified
+/// editor Settings uses. Every step is written to fit on screen without
+/// scrolling at default type sizes; the ScrollView only kicks in at
+/// accessibility sizes.
 struct OnboardingView: View {
     @ObservedObject var destinations: DestinationSetupViewModel
     let onFinished: () -> Void
@@ -11,11 +13,14 @@ struct OnboardingView: View {
     private enum Step: Int, CaseIterable {
         case welcome
         case howItWorks
+        case photos
         case connect
     }
 
     @State private var step: Step = .welcome
     @State private var isShowingShareEditor = false
+    @State private var photoStatus = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+    @State private var isRequestingPhotoAccess = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var hasConnectedShare: Bool {
@@ -31,6 +36,7 @@ struct OnboardingView: View {
                     switch step {
                     case .welcome: welcomeStep
                     case .howItWorks: howItWorksStep
+                    case .photos: photosStep
                     case .connect: connectStep
                     }
                 }
@@ -93,6 +99,23 @@ struct OnboardingView: View {
                     .buttonStyle(.borderedProminent)
                     .controlSize(.large)
                     .frame(maxWidth: .infinity)
+            case .photos:
+                Button {
+                    requestPhotoAccess()
+                } label: {
+                    Group {
+                        if isRequestingPhotoAccess {
+                            ProgressView()
+                                .tint(.white)
+                        } else {
+                            Text(photoStatus == .notDetermined ? "Allow Photo Access" : "Continue")
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .disabled(isRequestingPhotoAccess)
             case .connect:
                 if hasConnectedShare {
                     Button("Start Using SMBDrop") { onFinished() }
@@ -141,6 +164,25 @@ struct OnboardingView: View {
 
     private var stepAnimation: Animation? {
         reduceMotion ? nil : .spring(response: 0.35, dampingFraction: 0.8)
+    }
+
+    private func requestPhotoAccess() {
+        guard photoStatus == .notDetermined, !SampleContent.isEnabled else {
+            advance()
+            return
+        }
+        isRequestingPhotoAccess = true
+        Task {
+            let status = await withCheckedContinuation {
+                (continuation: CheckedContinuation<PHAuthorizationStatus, Never>) in
+                PHPhotoLibrary.requestAuthorization(for: .readWrite) { status in
+                    continuation.resume(returning: status)
+                }
+            }
+            photoStatus = status
+            isRequestingPhotoAccess = false
+            advance()
+        }
     }
 
     // MARK: - Steps
@@ -230,6 +272,62 @@ struct OnboardingView: View {
                 in: RoundedRectangle(cornerRadius: 18, style: .continuous)
             )
         }
+    }
+
+    private var photosStep: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            VStack(spacing: 10) {
+                Image(systemName: photoAccessGranted ? "checkmark.circle.fill" : "photo.stack.fill")
+                    .font(.system(size: 44, weight: .medium))
+                    .foregroundStyle(photoAccessGranted ? Color.green : Color.accentColor)
+                    .symbolRenderingMode(.hierarchical)
+                    .contentTransition(.symbolEffect(.replace))
+
+                Text(photoAccessGranted ? "Camera Roll Connected" : "Use Your Camera Roll")
+                    .font(.title.bold())
+                    .multilineTextAlignment(.center)
+
+                Text(
+                    photoAccessGranted
+                        ? "Your photos and albums are ready to browse and send."
+                        : "Let SMBDrop show your photos and albums so you can send them to your share."
+                )
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+            }
+            .frame(maxWidth: .infinity)
+
+            VStack(alignment: .leading, spacing: 14) {
+                checklistRow(
+                    symbol: "photo.on.rectangle.angled",
+                    text: "Browse your library and albums right in the app"
+                )
+                checklistRow(
+                    symbol: "arrow.up.circle",
+                    text: "Originals upload in full quality — nothing is compressed"
+                )
+                checklistRow(
+                    symbol: "hand.raised.fill",
+                    text: "Nothing leaves this iPhone until you tap Send"
+                )
+            }
+            .padding(16)
+            .background(
+                Color(.secondarySystemGroupedBackground),
+                in: RoundedRectangle(cornerRadius: 18, style: .continuous)
+            )
+
+            Text("You can change this anytime in iOS Settings → SMBDrop.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity)
+                .multilineTextAlignment(.center)
+        }
+    }
+
+    private var photoAccessGranted: Bool {
+        photoStatus == .authorized || photoStatus == .limited
     }
 
     private var connectStep: some View {
