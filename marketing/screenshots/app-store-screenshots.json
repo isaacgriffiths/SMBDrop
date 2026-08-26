@@ -1,0 +1,142 @@
+{
+  "schemaVersion": 2,
+  "appName": "SMBDrop",
+  "themeId": "smbdrop-dark",
+  "connectedCanvas": true,
+  "locales": [
+    "en"
+  ],
+  "locale": "en",
+  "device": "iphone",
+  "orientation": "portrait",
+  "appIcon": "/app-icon.png",
+  "slidesByDevice": {
+    "iphone": [
+      {
+        "id": "smb_01_hero",
+        "layout": "hero",
+        "label": {
+          "en": "MEET SMBDROP"
+        },
+        "headline": {
+          "en": "Send photos straight\nto your NAS."
+        },
+        "screenshot": "/screenshots/apple/iphone/en/02.jpg"
+      },
+      {
+        "id": "smb_02_share",
+        "layout": "device-bottom",
+        "label": {
+          "en": "TWO TAPS"
+        },
+        "headline": {
+          "en": "Pick a share.\nOn its way."
+        },
+        "screenshot": "/screenshots/apple/iphone/en/03.jpg"
+      },
+      {
+        "id": "smb_03_browse",
+        "layout": "device-top",
+        "label": {
+          "en": "BROWSE"
+        },
+        "headline": {
+          "en": "Your server,\nin your pocket."
+        },
+        "screenshot": "/screenshots/apple/iphone/en/06.jpg",
+        "inverted": true
+      },
+      {
+        "id": "smb_04_import",
+        "layout": "device-bottom",
+        "label": {
+          "en": "IMPORT"
+        },
+        "headline": {
+          "en": "Pull files back\nto your iPhone."
+        },
+        "screenshot": "/screenshots/apple/iphone/en/05.jpg"
+      },
+      {
+        "id": "smb_05_files",
+        "layout": "device-top",
+        "label": {
+          "en": "FILES"
+        },
+        "headline": {
+          "en": "Documents\ntravel too."
+        },
+        "screenshot": "/screenshots/apple/iphone/en/04.jpg"
+      },
+      {
+        "id": "smb_06_history",
+        "layout": "device-bottom",
+        "label": {
+          "en": "HISTORY"
+        },
+        "headline": {
+          "en": "Every transfer,\naccounted for."
+        },
+        "screenshot": "/screenshots/apple/iphone/en/08.jpg"
+      },
+      {
+        "id": "smb_07_shares",
+        "layout": "device-top",
+        "label": {
+          "en": "SHARES"
+        },
+        "headline": {
+          "en": "Set up once.\nSend forever."
+        },
+        "screenshot": "/screenshots/apple/iphone/en/07.jpg"
+      },
+      {
+        "id": "smb_08_privacy",
+        "layout": "device-bottom",
+        "label": {
+          "en": "PRIVATE BY DESIGN"
+        },
+        "headline": {
+          "en": "No account.\nNo cloud."
+        },
+        "screenshot": "/screenshots/apple/iphone/en/09.jpg",
+        "inverted": true
+      },
+      {
+        "id": "smb_09_photos",
+        "layout": "device-top",
+        "label": {
+          "en": "PHOTOS"
+        },
+        "headline": {
+          "en": "Your whole library,\nready to go."
+        },
+        "screenshot": "/screenshots/apple/iphone/en/01.jpg"
+      },
+      {
+        "id": "smb_10_albums",
+        "layout": "device-bottom",
+        "label": {
+          "en": "AND MORE"
+        },
+        "headline": {
+          "en": "Videos and albums,\nhandled."
+        },
+        "screenshot": "/screenshots/apple/iphone/en/10.jpg"
+      }
+    ],
+    "android": [],
+    "ipad": [],
+    "android-7": [],
+    "android-10": [],
+    "feature-graphic": []
+  },
+  "crossScreenMockupsByDevice": {
+    "iphone": [],
+    "ipad": [],
+    "android": [],
+    "android-7": [],
+    "android-10": [],
+    "feature-graphic": []
+  }
+}
