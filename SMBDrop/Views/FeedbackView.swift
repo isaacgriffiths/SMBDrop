@@ -154,7 +154,7 @@ struct FeedbackView: View {
 }
 
 enum FeedbackSender {
-    static let supportEmail = "max@wynbrothers.com"
+    static let supportEmail = "hello@smbdrop.com"
     static let endpoint = URL(string: "https://smbdrop-feedback.isaacgriffiths001.workers.dev/feedback")!
 
     enum SendError: Error {
