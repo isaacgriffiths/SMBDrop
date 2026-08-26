@@ -402,23 +402,20 @@ private struct PhotoPreview: View {
                     Image(uiImage: image)
                         .resizable()
                         .scaledToFill()
+                        .frame(width: proxy.size.width, height: proxy.size.height)
                 } else {
                     ProgressView()
                         .controlSize(.small)
                 }
-
+            }
+            .frame(width: proxy.size.width, height: proxy.size.height)
+            .clipped()
+            .overlay(alignment: .topTrailing) {
                 if let duration = item.durationText {
-                    VStack {
-                        HStack {
-                            Spacer()
-                            VideoDurationBadge(duration: duration)
-                                .padding(4)
-                        }
-                        Spacer()
-                    }
+                    VideoDurationBadge(duration: duration)
+                        .padding(4)
                 }
             }
-            .clipped()
             .task(id: item.id) {
                 let scale = UIScreen.main.scale
                 image = await thumbnail(
@@ -442,34 +439,35 @@ private struct PhotoGridCell: View {
             ZStack {
                 Color(uiColor: .secondarySystemBackground)
                 if let image {
+                    // The frame pins the filled image to the cell's square
+                    // before anything is overlaid; without it the cell's
+                    // layout box grows to the un-cropped image and the
+                    // badges get positioned (then clipped) off the square.
                     Image(uiImage: image)
                         .resizable()
                         .scaledToFill()
+                        .frame(width: proxy.size.width, height: proxy.size.height)
                 } else {
                     ProgressView()
                 }
-
-                // The duration badge owns the top-right corner and the
-                // selection circle the bottom-right, so neither ever
-                // squeezes the other in a narrow grid cell.
-                VStack {
-                    HStack {
-                        Spacer()
-                        if let duration = item.durationText {
-                            VideoDurationBadge(duration: duration)
-                        }
-                    }
-                    Spacer()
-                    if showsSelection {
-                        HStack {
-                            Spacer()
-                            selectionCircle
-                        }
-                    }
-                }
-                .padding(6)
             }
+            .frame(width: proxy.size.width, height: proxy.size.height)
             .clipped()
+            // The duration badge owns the top-right corner and the selection
+            // circle the bottom-right of the *visible* square, whatever the
+            // photo's aspect ratio.
+            .overlay(alignment: .topTrailing) {
+                if let duration = item.durationText {
+                    VideoDurationBadge(duration: duration)
+                        .padding(6)
+                }
+            }
+            .overlay(alignment: .bottomTrailing) {
+                if showsSelection {
+                    selectionCircle
+                        .padding(6)
+                }
+            }
             .task(id: item.id) {
                 let scale = UIScreen.main.scale
                 image = await thumbnail(

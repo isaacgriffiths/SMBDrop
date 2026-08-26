@@ -64,6 +64,13 @@ struct ContentView: View {
                 hasCompletedOnboarding = true
             }
         }
+        .onChange(of: hasCompletedOnboarding) {
+            // Settings › About › Developer › Show Onboarding clears the flag
+            // to replay the first-run flow on demand.
+            if !hasCompletedOnboarding {
+                isShowingOnboarding = true
+            }
+        }
         .fullScreenCover(isPresented: $isShowingOnboarding) {
             OnboardingView(destinations: destinations) {
                 hasCompletedOnboarding = true

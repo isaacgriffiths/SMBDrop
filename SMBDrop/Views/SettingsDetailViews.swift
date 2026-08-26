@@ -170,6 +170,7 @@ struct AboutView: View {
     // Screenshot/demo mode is a developer feature: it stays hidden until the
     // header card is triple-tapped, so ordinary users don't stumble into it.
     @AppStorage(SampleContent.defaultsKey) private var isSampleContentOn = false
+    @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
     @State private var isDeveloperSectionRevealed = false
 
     private var version: String {
@@ -225,10 +226,17 @@ struct AboutView: View {
             if isDeveloperSectionRevealed || isSampleContentOn {
                 Section {
                     Toggle("Sample Content", isOn: $isSampleContentOn)
+                    Button {
+                        // ContentView watches this flag and re-presents the
+                        // first-run flow the moment it flips back to false.
+                        hasCompletedOnboarding = false
+                    } label: {
+                        Label("Show Onboarding", systemImage: "sparkles.rectangle.stack")
+                    }
                 } header: {
                     Text("Developer")
                 } footer: {
-                    Text("Shows sample photos, files, shares, and transfers instead of your own — useful for screenshots. Real transfers pause while this is on.")
+                    Text("Sample Content shows demo photos, files, shares, and transfers instead of your own — useful for screenshots; real transfers pause while it is on. Show Onboarding replays the first-run introduction.")
                 }
             }
         }
