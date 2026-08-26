@@ -167,6 +167,11 @@ struct TransferHistoryView: View {
 }
 
 struct AboutView: View {
+    // Screenshot/demo mode is a developer feature: it stays hidden until the
+    // header card is triple-tapped, so ordinary users don't stumble into it.
+    @AppStorage(SampleContent.defaultsKey) private var isSampleContentOn = false
+    @State private var isDeveloperSectionRevealed = false
+
     private var version: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "—"
     }
@@ -193,6 +198,12 @@ struct AboutView: View {
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 14)
+                .contentShape(Rectangle())
+                .onTapGesture(count: 3) {
+                    withAnimation {
+                        isDeveloperSectionRevealed.toggle()
+                    }
+                }
             }
 
             Section("Privacy") {
@@ -206,6 +217,18 @@ struct AboutView: View {
                 LabeledContent("Build", value: build)
                 NavigationLink("Third-Party Notices") {
                     ThirdPartyNoticesView()
+                }
+            }
+
+            // Kept visible while on even without the reveal gesture, so the
+            // mode can always be found and turned off again.
+            if isDeveloperSectionRevealed || isSampleContentOn {
+                Section {
+                    Toggle("Sample Content", isOn: $isSampleContentOn)
+                } header: {
+                    Text("Developer")
+                } footer: {
+                    Text("Shows sample photos, files, shares, and transfers instead of your own — useful for screenshots. Real transfers pause while this is on.")
                 }
             }
         }

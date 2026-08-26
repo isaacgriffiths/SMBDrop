@@ -79,7 +79,7 @@ struct SettingsView: View {
                     }
                 }
 
-                Section {
+                Section("App") {
                     NavigationLink {
                         AboutView()
                     } label: {
@@ -88,16 +88,6 @@ struct SettingsView: View {
                             Text("About SMBDrop")
                         }
                     }
-                    Toggle(isOn: $isSampleContentOn) {
-                        HStack(spacing: 14) {
-                            settingsIcon("sparkles.rectangle.stack.fill", color: .purple)
-                            Text("Sample Content")
-                        }
-                    }
-                } header: {
-                    Text("App")
-                } footer: {
-                    Text("Shows sample photos, files, shares, and transfers instead of your own — useful for screenshots. Real transfers pause while this is on.")
                 }
             }
             .navigationTitle("Settings")
