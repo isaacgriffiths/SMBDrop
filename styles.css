@@ -59,7 +59,16 @@ a:focus-visible { outline: 2px solid var(--blue); outline-offset: 3px; border-ra
 }
 .hint { color: var(--muted); font-size: 0.9rem; }
 
-/* Transfer ledger — the signature */
+/* Hero app screenshot */
+.hero-shot { display: flex; justify-content: center; }
+.hero-shot img {
+  width: auto; max-width: 100%; max-height: 640px;
+  border-radius: 34px;
+  border: 1px solid var(--line);
+  box-shadow: 0 30px 70px -32px rgba(14, 27, 44, 0.55);
+}
+
+/* Transfer ledger — the signature (kept for reuse) */
 .ledger {
   background: var(--panel); border-radius: 16px; padding: 22px 20px 18px;
   color: var(--sky); box-shadow: 0 24px 60px -28px rgba(14, 27, 44, 0.55);
@@ -157,6 +166,7 @@ footer .spacer { flex: 1; }
 
 @media (max-width: 800px) {
   .hero { grid-template-columns: 1fr; padding: 40px 0 48px; }
+  .hero-shot img { max-height: 520px; }
   .steps, .grid { grid-template-columns: 1fr; }
   .nav nav { gap: 14px; }
 }
