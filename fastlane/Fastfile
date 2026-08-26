@@ -109,7 +109,10 @@ platform :ios do
       screenshots_path: "./fastlane/screenshots",
       skip_binary_upload: true,
       skip_screenshots: false,
-      overwrite_screenshots: true,
+      # Checksum-based sync instead of delete-all + re-upload: the old mode
+      # raced App Store Connect's processing lag and duplicated screenshots
+      # it wrongly believed were missing.
+      sync_screenshots: true,
       run_precheck_before_submit: false,
       force: true
     )
