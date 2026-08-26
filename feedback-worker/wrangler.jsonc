@@ -11,7 +11,9 @@
 		"enabled": true
 	},
 	"vars": {
-		"FEEDBACK_TO": "max@wynbrothers.com",
-		"FEEDBACK_FROM": "SMBDrop <noreply@isaacgriffiths.com>"
+		// Delivered to the smbdrop.com mailbox; Cloudflare Email Routing
+		// forwards it on to Isaac's personal inbox.
+		"FEEDBACK_TO": "hello@smbdrop.com",
+		"FEEDBACK_FROM": "SMBDrop <hello@smbdrop.com>"
 	}
 }
