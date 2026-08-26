@@ -38,7 +38,7 @@ targets:
         INFOPLIST_FILE: SMBDrop/SupportFiles/Info.plist
         CODE_SIGN_ENTITLEMENTS: SMBDrop/SupportFiles/SMBDrop.entitlements
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
-        TARGETED_DEVICE_FAMILY: "1,2"
+        TARGETED_DEVICE_FAMILY: "1"
         ENABLE_PREVIEWS: YES
   ShareExtension:
     type: app-extension
@@ -58,7 +58,7 @@ targets:
         GENERATE_INFOPLIST_FILE: NO
         INFOPLIST_FILE: ShareExtension/Info.plist
         CODE_SIGN_ENTITLEMENTS: ShareExtension/ShareExtension.entitlements
-        TARGETED_DEVICE_FAMILY: "1,2"
+        TARGETED_DEVICE_FAMILY: "1"
         APPLICATION_EXTENSION_API_ONLY: YES
         LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks"
   SMBDropTests:
