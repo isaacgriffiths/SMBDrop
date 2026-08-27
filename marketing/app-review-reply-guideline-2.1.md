@@ -3,9 +3,11 @@
 ## How to send
 
 App Store Connect → SMBDrop → the rejection message → **Reply to App Review**.
-Attach `S:\Video\SMBDrop-review-recording.mp4` (the blurred copy — NOT the original
-`ScreenRecording_08-27-2026 21-18-11_1.mp4`, which shows incoming message
-notifications), paste the reply text below, and send. No new build is required.
+Attach BOTH blurred copies — `S:\Video\SMBDrop-review-recording.mp4` and
+`S:\Video\SMBDrop-review-extension.mp4` — NOT the originals (the
+`ScreenRecording_08-27-2026 ...` files, which show message notifications, the share
+sheet's contacts row with a phone number, and the Home Screen with a finance widget).
+Paste the reply text below and send. No new build is required.
 
 Recording verified 2026-08-27: launch from TestFlight, full onboarding, add-share with
 Find Shares + Test Connection, the iOS Local Network permission prompt (accepted on
@@ -14,10 +16,10 @@ document round-trip with preview, and Settings/About. The iOS Photos permission 
 does not appear (access was already granted on the device before recording), and the
 share-sheet extension is not shown — the reply text below is worded to match.
 
-Optional: a second ~20s clip of the extension (Photos app → Share → SMBDrop → send)
-would cover the one core feature the video misses. If you record it, attach it too and
-add this sentence to the end of item 1: "A second short clip showing the share-sheet
-extension (Photos app → Share → SMBDrop) is also attached."
+Second clip verified: Photos app → select 4 photos → Share → SMBDrop → extension's
+"Choose an SMB Share" → uploads 4 of 4 with progress → Done, then imports them back in
+the main app. Blurred: contacts row of the share sheet (0:03–0:07) and the Home Screen
+during app switching (0:16–0:18).
 
 ## Reply text (paste below the attachment) — fits the 4000-character limit
 
@@ -32,13 +34,17 @@ Network permission prompt being granted on camera — sending photos with live t
 progress, browsing the share and importing files back to the phone, a document
 round-trip from the Files tab with preview, and the Settings and About screens. The iOS
 photo-library permission dialog itself does not appear because photo access had already
-been granted to the app on this device before recording started. A small strip at the
-top of the frame is blurred between 0:35 and 0:48 to hide incoming personal message
-notifications; nothing behind it is app UI. SMBDrop has no account registration or
-login, no purchases or subscriptions, and no user-generated content shared between
-users, so those flows do not exist in the app. As a real-world demonstration: this very
-recording was transferred from the iPhone to our Windows PC using SMBDrop itself, via
-the same Samba share shown in the video, which the PC also mounts.
+been granted to the app on this device before recording started. A second short clip (also
+attached) shows the share-sheet extension: Photos app → Share → SMBDrop, choosing the
+share and uploading four photos with progress, then importing them back in the main
+app. In both videos a few brief moments are blurred solely to hide personal content
+that is not app UI — incoming message notifications (first video, 0:35–0:48), and the
+share sheet's contacts row and the Home Screen during app switching (second video).
+SMBDrop has no account registration or login, no purchases or subscriptions, and no
+user-generated content shared between users, so those flows do not exist in the app.
+As a real-world demonstration: the first recording was transferred from the iPhone to
+our Windows PC using SMBDrop itself, via the same Samba share shown in the video,
+which the PC also mounts.
 
 2. The app was tested via TestFlight on a physical iPhone 16 Pro running iOS 26.6,
 against a real SMB server: Samba on Linux, with the same share also accessed from
