@@ -31,8 +31,8 @@ Hello, thank you for the review. Responses to each numbered point:
 It begins at app launch and shows: onboarding (including the in-app photo-access step),
 adding an SMB share with Find Shares and Test Connection — including the iOS Local
 Network permission prompt being granted on camera — sending photos with live transfer
-progress, browsing the share and importing files back to the phone, a document
-round-trip from the Files tab with preview, and the Settings and About screens. The iOS
+progress, browsing the share and importing files back to the phone, and a Files-tab
+document round-trip. The iOS
 photo-library permission dialog itself does not appear because photo access had already
 been granted to the app on this device before recording started. A second short clip (also
 attached) shows the share-sheet extension: Photos app → Share → SMBDrop, choosing the
