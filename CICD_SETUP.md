@@ -22,7 +22,13 @@ They also use six repository secrets:
   `MATCH_GIT_BASIC_AUTHORIZATION` allow Fastlane match to read and update the
   private `ios-certificates` repository.
 
-To set all ten values without printing secret material, copy `.env.example` to
+The App Store Metadata workflow also reads four optional secrets for the App
+Review contact: `REVIEW_CONTACT_FIRST_NAME`, `REVIEW_CONTACT_LAST_NAME`,
+`REVIEW_CONTACT_PHONE` and `REVIEW_CONTACT_EMAIL`. They are personal data, so
+they are never committed under `fastlane/metadata/review_information`; only
+`notes.txt` lives there.
+
+To set all of these values without printing secret material, copy `.env.example` to
 `.env.local`, complete it, and run:
 
 ```powershell

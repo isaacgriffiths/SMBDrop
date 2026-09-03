@@ -1,4 +1,4 @@
-﻿.claude/
+.claude/
 .env.local
 *.xcodeproj
 DerivedData/
@@ -9,3 +9,9 @@ fastlane/README.md
 *.ipa
 *.dSYM.zip
 .DS_Store
+# App Review contact details are personal data. They come from GitHub secrets
+# (see CICD_SETUP.md) and are never committed; notes.txt is fine to keep.
+fastlane/metadata/review_information/email_address.txt
+fastlane/metadata/review_information/phone_number.txt
+fastlane/metadata/review_information/first_name.txt
+fastlane/metadata/review_information/last_name.txt

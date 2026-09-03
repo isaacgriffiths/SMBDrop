@@ -8,7 +8,7 @@ Requires iOS 17 or later and an SMB server reachable on your network. Builds shi
 
 ## Why it exists
 
-Getting a photo off an iPhone and onto a home server should be one tap in the share sheet. Most apps that do it want an account, a subscription, or a cloud relay in the middle. SMBDrop does the one job over the local network and keeps the original bytes intact.
+I kept struggling to get videos and files off my iPhone and onto my share drive. Every app that could do it wanted an account, a subscription, or a cloud relay in the middle, and some would quietly re-encode a video on the way. So I built the one-job app I wanted: pick the files, tap the share, done, with the original bytes landing on my own server over my own network.
 
 ## What it does
 
@@ -95,7 +95,24 @@ xcodebuild -project SMBDrop.xcodeproj -scheme SMBDrop \
   CODE_SIGNING_ALLOWED=NO test
 ```
 
-Signing and TestFlight uploads need the repository variables and secrets described in `CICD_SETUP.md`. Copy `.env.example` to `.env.local` and run `node scripts/set-apple-secrets.mjs` to set them without printing secret material.
+Signing and TestFlight uploads need the repository variables and secrets described in `CICD_SETUP.md`. Copy `.env.example` to `.env.local` and run `node scripts/set-apple-secrets.mjs` to set them without printing secret material. Nothing personal is committed: the App Store Connect key, the match passphrase and the App Review contact details all live in GitHub secrets, and `.env.local` is gitignored.
+
+## Making it your own
+
+The code is generic SMB; the identity is in a handful of places. To ship your own build, change:
+
+| What | Where |
+| --- | --- |
+| Bundle identifiers for the app and the extension | `project.yml` (`PRODUCT_BUNDLE_IDENTIFIER` on both targets) and the `APP_BUNDLE_ID` repository variable |
+| App Group shared by both targets | `Shared/AppGroup.swift` plus `SMBDrop/SupportFiles/SMBDrop.entitlements` and `ShareExtension/ShareExtension.entitlements` |
+| Apple team ID and GitHub repository | `scripts/set-apple-secrets.mjs` (`repository`, `APP_TEAM_ID`, `MATCH_GIT_URL`) and the commands in `CICD_SETUP.md` |
+| Certificates repository for fastlane match | A private repo of your own, referenced by the `MATCH_GIT_URL` secret |
+| Feedback endpoint and support email | `SMBDrop/Views/FeedbackView.swift`. Deploy your own copy of `feedback-worker/` with `npx wrangler deploy` and point the app at its URL |
+| App name, icon and copyright | `project.yml` (`PRODUCT_NAME`), `SMBDrop/Resources/Assets.xcassets`, `fastlane/metadata/copyright.txt` |
+| App Store listing text and screenshots | `fastlane/metadata/en-GB/` and `fastlane/screenshots/en-GB/` |
+| Marketing site | The `gh-pages` branch; the domain lives in its `wrangler.jsonc` |
+
+Then run the **Init signing** workflow once, as described in `CICD_SETUP.md`, and every push to `main` ships to your TestFlight.
 
 ## Privacy
 

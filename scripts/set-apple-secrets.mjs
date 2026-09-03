@@ -99,6 +99,17 @@ setSecret(
 setSecret("MATCH_PASSWORD", required("MATCH_PASSWORD"));
 setSecret("MATCH_GIT_BASIC_AUTHORIZATION", basicAuthorization);
 
+// Optional App Review contact. Anything left blank is skipped and App Store
+// Connect keeps whatever it already has.
+for (const name of [
+  "REVIEW_CONTACT_FIRST_NAME",
+  "REVIEW_CONTACT_LAST_NAME",
+  "REVIEW_CONTACT_PHONE",
+  "REVIEW_CONTACT_EMAIL",
+]) {
+  if (env[name]) setSecret(name, env[name]);
+}
+
 const secretNames = JSON.parse(
   gh(["secret", "list", "--repo", repository, "--json", "name"]),
 ).map(({ name }) => name);
