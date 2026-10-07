@@ -86,6 +86,91 @@ final class SMBTransferWorkerTests: XCTestCase {
         XCTAssertEqual(session.disconnectModes, [false])
     }
 
+    func testBackupTreatsAnIdenticalExistingFileAsAlreadyUploaded() async throws {
+        let bytes = Data("photo bytes".utf8)
+        let fixture = try UploadFixture(filename: "IMG_0001.HEIC", bytes: bytes)
+        defer { fixture.remove() }
+        let work = try await fixture.claimedWork(acceptsIdenticalExistingFile: true)
+        let session = FakeUploadSession(
+            existingNames: ["IMG_0001.HEIC"],
+            existingSizes: ["IMG_0001.HEIC": bytes.count]
+        )
+        let uploader = SMBTransferUploader(sessionFactory: { _, _ in session })
+        let destination = try Destination(host: "nas", share: "photos", subfolder: "", username: "isaac")
+        let reservation = PublishReservation()
+
+        let remoteFilename = try await uploader.upload(
+            work,
+            to: destination,
+            password: "secret",
+            progress: { _ in },
+            shouldPublish: {
+                reservation.wasRequested = true
+                return true
+            }
+        )
+
+        XCTAssertEqual(remoteFilename, "IMG_0001.HEIC")
+        XCTAssertTrue(reservation.wasRequested)
+        XCTAssertNil(session.uploadedPath)
+        XCTAssertNil(session.movedToPath)
+    }
+
+    func testBackupStillStopsWhenTheExistingFileDiffers() async throws {
+        let bytes = Data("photo bytes".utf8)
+        for (existingName, existingSize) in [
+            ("IMG_0001.HEIC", bytes.count + 1),
+            ("img_0001.heic", bytes.count),
+        ] {
+            let fixture = try UploadFixture(filename: "IMG_0001.HEIC", bytes: bytes)
+            defer { fixture.remove() }
+            let work = try await fixture.claimedWork(acceptsIdenticalExistingFile: true)
+            let session = FakeUploadSession(
+                existingNames: [existingName],
+                existingSizes: [existingName: existingSize]
+            )
+            let uploader = SMBTransferUploader(sessionFactory: { _, _ in session })
+            let destination = try Destination(host: "nas", share: "photos", subfolder: "", username: "isaac")
+
+            do {
+                _ = try await uploader.upload(
+                    work,
+                    to: destination,
+                    password: "secret",
+                    progress: { _ in },
+                    shouldPublish: { true }
+                )
+                XCTFail("Expected \(existingName) (\(existingSize) bytes) to stop the upload")
+            } catch {
+                XCTAssertEqual(error as? TransferUploadError, .fileAlreadyExists("IMG_0001.HEIC"))
+            }
+            XCTAssertNil(session.uploadedPath)
+        }
+    }
+
+    func testOnlyNameClashesCountAsItemSpecificFailures() {
+        var transfer = Transfer(
+            id: UUID(),
+            filename: "IMG_0001.HEIC",
+            byteCount: 10,
+            createdAt: Date(),
+            sourceCreationDate: nil,
+            sourceModificationDate: Date(),
+            destinationID: UUID(),
+            batchID: UUID(),
+            updatedAt: Date(),
+            status: .failed,
+            bytesTransferred: 0,
+            attemptCount: 1,
+            remoteFilename: nil,
+            errorMessage: TransferUploadError.fileAlreadyExists("IMG_0001.HEIC").errorDescription
+        )
+        XCTAssertTrue(transfer.hasItemSpecificFailure)
+
+        transfer.errorMessage = SMBConnectionError.serverUnavailable.errorDescription
+        XCTAssertFalse(transfer.hasItemSpecificFailure)
+    }
+
     func testUploaderStopsAndRemovesPartialWhenTransferRemovalIsRequested() async throws {
         let fixture = try UploadFixture(filename: "clip.mov", bytes: Data("video bytes".utf8))
         defer { fixture.remove() }
@@ -198,17 +283,18 @@ private final class UploadFixture {
         outbox = TransferOutbox(rootURL: rootURL.appendingPathComponent("Outbox", isDirectory: true))
     }
 
-    func enqueue() async throws -> Transfer {
+    func enqueue(acceptsIdenticalExistingFile: Bool = false) async throws -> Transfer {
         try await outbox.enqueueFile(
             at: sourceURL,
             filename: filename,
             destinationID: destinationID,
-            batchID: batchID
+            batchID: batchID,
+            acceptsIdenticalExistingFile: acceptsIdenticalExistingFile
         )
     }
 
-    func claimedWork() async throws -> TransferWork {
-        _ = try await enqueue()
+    func claimedWork(acceptsIdenticalExistingFile: Bool = false) async throws -> TransferWork {
+        _ = try await enqueue(acceptsIdenticalExistingFile: acceptsIdenticalExistingFile)
         let work = try await outbox.claimNext(for: destinationID)
         return try XCTUnwrap(work)
     }
@@ -233,20 +319,27 @@ private final class FakeUploadSession: SMBUploadSession {
     var disconnectModes: [Bool] = []
     var removedPaths: [String] = []
     private let existingNames: [String]
+    private let existingSizes: [String: Int]
     private let beforeProgress: (() async throws -> Void)?
 
     init(
         existingNames: [String],
+        existingSizes: [String: Int] = [:],
         beforeProgress: (() async throws -> Void)? = nil
     ) {
         self.existingNames = existingNames
+        self.existingSizes = existingSizes
         self.beforeProgress = beforeProgress
     }
 
     func connectShare(name: String, encrypted: Bool) async throws {}
 
     func contentsOfDirectory(atPath path: String) async throws -> [[URLResourceKey: Any]] {
-        existingNames.map { [.nameKey: $0] }
+        existingNames.map { name in
+            var entry: [URLResourceKey: Any] = [.nameKey: name]
+            entry[.fileSizeKey] = existingSizes[name].map(NSNumber.init(value:))
+            return entry
+        }
     }
 
     func uploadItem(
@@ -286,6 +379,10 @@ private final class FakeUploadSession: SMBUploadSession {
     func disconnectShare(gracefully: Bool) async throws {
         disconnectModes.append(gracefully)
     }
+}
+
+private final class PublishReservation: @unchecked Sendable {
+    var wasRequested = false
 }
 
 private enum FakeUploadError: Error {

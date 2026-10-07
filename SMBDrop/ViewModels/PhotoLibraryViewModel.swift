@@ -63,9 +63,6 @@ final class PhotoLibraryViewModel: NSObject, ObservableObject, PHPhotoLibraryCha
     @Published private(set) var items: [PhotoLibraryItem] = []
     @Published private(set) var selectedAlbumID: String?
     @Published private(set) var selectedIDs: Set<String> = []
-    @Published private(set) var isPreparing = false
-    @Published private(set) var preparedCount = 0
-    @Published private(set) var resourceCount = 0
 
     private let imageManager = PHCachingImageManager()
 
@@ -141,6 +138,14 @@ final class PhotoLibraryViewModel: NSObject, ObservableObject, PHPhotoLibraryCha
         selectedIDs = []
     }
 
+    var isAllSelected: Bool {
+        !items.isEmpty && selectedIDs.count == items.count
+    }
+
+    func selectAll() {
+        selectedIDs = Set(items.map(\.id))
+    }
+
     func openAlbum(_ album: PhotoLibraryAlbum) {
         selectedAlbumID = album.id
         if SampleContent.isEnabled {
@@ -206,51 +211,16 @@ final class PhotoLibraryViewModel: NSObject, ObservableObject, PHPhotoLibraryCha
         }
     }
 
-    func enqueueSelection(
+    /// Hands the selection to the export coordinator, which copies the
+    /// originals a chunk at a time as the transfer runs. A Select All over a
+    /// whole library is a list of identifiers here, not a copy of every file.
+    func sendSelection(
         to destination: DestinationSummary,
-        transferQueue: TransferQueueViewModel
-    ) async throws {
-        let selection = selectedItems
-        guard !selection.isEmpty else { return }
-        isPreparing = true
-        preparedCount = 0
-        let resources = selection.compactMap(\.asset).flatMap { resourcesToExport(for: $0) }
-        resourceCount = resources.count
-        let batchID = UUID()
-        transferQueue.track(batchID: batchID)
-
-        let directoryURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent("SMBDrop-Photos-\(batchID.uuidString)", isDirectory: true)
-        try FileManager.default.createDirectory(
-            at: directoryURL,
-            withIntermediateDirectories: true
-        )
-        defer {
-            try? FileManager.default.removeItem(at: directoryURL)
-            isPreparing = false
-        }
-
-        for (asset, resource) in resources {
-            let localURL = directoryURL.appendingPathComponent(UUID().uuidString)
-            try await write(resource, to: localURL)
-            if let date = asset.creationDate {
-                try? FileManager.default.setAttributes(
-                    [.creationDate: date, .modificationDate: date],
-                    ofItemAtPath: localURL.path
-                )
-            }
-            _ = try await transferQueue.enqueueFile(
-                at: localURL,
-                filename: resource.originalFilename,
-                destinationID: destination.id,
-                batchID: batchID,
-                moveSource: true
-            )
-            preparedCount += 1
-        }
-
+        coordinator: PhotoExportCoordinator
+    ) async {
+        let assetIDs = selectedItems.compactMap(\.asset).map(\.localIdentifier)
         clearSelection()
-        await transferQueue.startUserInitiatedTransfer()
+        await coordinator.send(assetIDs: assetIDs, to: destination.id)
     }
 
     private func reload() {
@@ -402,50 +372,6 @@ final class PhotoLibraryViewModel: NSObject, ObservableObject, PHPhotoLibraryCha
         case .smartAlbumLivePhotos: 4
         case .smartAlbumPanoramas: 5
         default: 100
-        }
-    }
-
-    private func resourcesToExport(for asset: PHAsset) -> [(PHAsset, PHAssetResource)] {
-        let resources = PHAssetResource.assetResources(for: asset)
-        switch asset.mediaType {
-        case .image:
-            var selected: [PHAssetResource] = []
-            if let photo = resources.first(where: { $0.type == .photo })
-                ?? resources.first(where: { $0.type == .fullSizePhoto }) {
-                selected.append(photo)
-            }
-            selected.append(contentsOf: resources.filter { $0.type == .alternatePhoto })
-            if asset.mediaSubtypes.contains(.photoLive),
-               let pairedVideo = resources.first(where: { $0.type == .pairedVideo })
-                ?? resources.first(where: { $0.type == .fullSizePairedVideo }) {
-                selected.append(pairedVideo)
-            }
-            return selected.map { (asset, $0) }
-        case .video:
-            let video = resources.first(where: { $0.type == .video })
-                ?? resources.first(where: { $0.type == .fullSizeVideo })
-            return video.map { [(asset, $0)] } ?? []
-        default:
-            return []
-        }
-    }
-
-    private func write(_ resource: PHAssetResource, to url: URL) async throws {
-        try await withCheckedThrowingContinuation {
-            (continuation: CheckedContinuation<Void, Error>) in
-            let options = PHAssetResourceRequestOptions()
-            options.isNetworkAccessAllowed = true
-            PHAssetResourceManager.default().writeData(
-                for: resource,
-                toFile: url,
-                options: options
-            ) { error in
-                if let error {
-                    continuation.resume(throwing: error)
-                } else {
-                    continuation.resume()
-                }
-            }
         }
     }
 }

@@ -27,6 +27,11 @@ const photoLibraryViewModel = readFileSync(
   "SMBDrop/ViewModels/PhotoLibraryViewModel.swift",
   "utf8",
 );
+const photoExportCoordinator = readFileSync(
+  "SMBDrop/PhotoExport/PhotoExportCoordinator.swift",
+  "utf8",
+);
+const automaticBackup = readFileSync("SMBDrop/PhotoExport/AutomaticBackup.swift", "utf8");
 const providerLoader = readFileSync(
   "ShareExtension/ShareItemProviderLoader.swift",
   "utf8",
@@ -80,13 +85,25 @@ if (!/BGContinuedProcessingTaskRequest/.test(transferQueueViewModel)
     || !/TransferDrainLifetime/.test(transferQueueViewModel)) {
   throw new Error("Main-app transfers do not continue with system progress after backgrounding.");
 }
-if (!/startUserInitiatedTransfer/.test(photosView + photoLibraryViewModel)
+if (!/startUserInitiatedTransfer/.test(photosView + photoLibraryViewModel + photoExportCoordinator)
     || !/startUserInitiatedTransfer/.test(filesView)) {
   throw new Error("Photo and file exports do not start a user-initiated continued task.");
 }
 if (!/BGTaskSchedulerPermittedIdentifiers/.test(appInfo)
     || !/com\.isaacgriffiths\.smbdrop\.transfer\.\*/.test(appInfo)) {
   throw new Error("The app does not permit its continued transfer task identifier.");
+}
+if (!/stageMoreWork/.test(photoExportCoordinator) || !/chunkAssetLimit/.test(photoExportCoordinator)
+    || !/archiveCompleted/.test(photoExportCoordinator)) {
+  throw new Error("Photo exports stage the whole selection up front instead of a chunk at a time.");
+}
+if (!/BGProcessingTaskRequest/.test(automaticBackup)
+    || !/com\.isaacgriffiths\.smbdrop\.backup/.test(appInfo)
+    || !/<string>processing<\/string>/.test(appInfo)) {
+  throw new Error("Automatic Backup cannot run as a background processing task.");
+}
+if (!/acceptsIdenticalExistingFile/.test(uploader) || !/fileAlreadyExists/.test(uploader)) {
+  throw new Error("Automatic Backup cannot skip files already on the share safely.");
 }
 if (!/loadAll\(\)/.test(destinationStore) || !/savedDestinations\.v2/.test(destinationStore)) {
   throw new Error("Destination storage does not support multi-share migration.");

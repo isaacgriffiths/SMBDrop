@@ -60,12 +60,23 @@ struct SMBTransferUploader: SMBTransferUploading {
         do {
             try await connect(session, share: destination.share)
             let entries = try await session.contentsOfDirectory(atPath: destination.remotePath)
-            let existingNames = Set(entries.compactMap { $0[.nameKey] as? String })
             let remoteFilename = work.transfer.filename
-            guard !existingNames.contains(where: {
-                $0.caseInsensitiveCompare(remoteFilename) == .orderedSame
-            }) else {
-                throw TransferUploadError.fileAlreadyExists(remoteFilename)
+            if let existing = entries.first(where: {
+                ($0[.nameKey] as? String)?.caseInsensitiveCompare(remoteFilename) == .orderedSame
+            }) {
+                guard work.transfer.acceptsIdenticalExistingFile == true,
+                      existing[.nameKey] as? String == remoteFilename,
+                      Self.fileSize(in: existing) == work.transfer.byteCount else {
+                    throw TransferUploadError.fileAlreadyExists(remoteFilename)
+                }
+                // The same file is already on the share. Nothing is written,
+                // but the item still goes through the publish reservation so
+                // a concurrent removal request keeps its usual meaning.
+                guard try await shouldPublish() else {
+                    throw TransferUploadError.cancelled
+                }
+                try? await session.disconnectShare(gracefully: true)
+                return remoteFilename
             }
             let finalPath = Self.remotePath(
                 folderPath: destination.remotePath,
@@ -285,6 +296,21 @@ enum TransferUploadError: LocalizedError, Equatable {
         case .cancelled:
             "The transfer was removed."
         }
+    }
+}
+
+extension Transfer {
+    /// True when the failure belongs to this file alone, such as a name that
+    /// is already taken on the share, rather than to the share or network.
+    /// Retrying will not help these, and they say nothing about whether the
+    /// next file would get through.
+    var hasItemSpecificFailure: Bool {
+        guard status == .failed, let errorMessage else { return false }
+        let itemErrors: [TransferUploadError] = [
+            .fileAlreadyExists(filename),
+            .sourceTimestampUnavailable,
+        ]
+        return itemErrors.contains { $0.errorDescription == errorMessage }
     }
 }
 

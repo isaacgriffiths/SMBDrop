@@ -7,12 +7,23 @@ import UIKit
 final class TransferQueueViewModel: ObservableObject {
     private static let continuedTaskIdentifierPrefix = "com.isaacgriffiths.smbdrop.transfer"
 
+    /// The one queue the app, its photo exports and Automatic Backup share.
+    static let shared = TransferQueueViewModel()
+
     @Published private(set) var transfers: [Transfer] = []
     @Published private(set) var isDraining = false
     @Published private(set) var message: String?
     @Published private(set) var activeBatchID: UUID?
     @Published private(set) var destinationNames: [UUID: String] = [:]
     @Published private(set) var pendingRemovalIDs: Set<UUID> = []
+    /// Per batch, the photo-export work kept outside the outbox.
+    @Published private(set) var chunkedCounts: [UUID: ChunkedBatchCounts] = [:]
+
+    /// Stages more durable work when the outbox runs dry. Returns true when
+    /// it made progress, so the drain loops instead of finishing. Photo
+    /// exports use this to copy originals a chunk at a time rather than
+    /// duplicating a whole selection on disk before the first upload.
+    var stageMoreWork: (@MainActor () async -> Bool)?
 
     private let destinationStore: DestinationStore
     private let worker: SMBTransferWorker
@@ -59,7 +70,54 @@ final class TransferQueueViewModel: ObservableObject {
 
     var activeProgress: TransferBatchProgress? {
         let activeTransfers = activeTransfers
-        return activeTransfers.isEmpty ? nil : TransferBatchProgress(transfers: activeTransfers)
+        let batchID = activeTransfers.lazy.compactMap(\.batchID).first ?? activeBatchID
+        let chunked = batchID.flatMap { chunkedCounts[$0] } ?? ChunkedBatchCounts()
+        guard !activeTransfers.isEmpty || chunked != ChunkedBatchCounts() else { return nil }
+        return TransferBatchProgress(transfers: activeTransfers, chunked: chunked)
+    }
+
+    var hasUnstagedWork: Bool {
+        chunkedCounts.values.contains { $0.unstaged > 0 }
+    }
+
+    func setChunkedCounts(_ counts: [UUID: ChunkedBatchCounts]) {
+        chunkedCounts = counts
+        reportProgressIfNeeded()
+    }
+
+    /// Clears a batch's finished items from the outbox and returns them, so a
+    /// chunked export can fold them into its counts before staging more.
+    func archiveCompleted(in batchID: UUID) async throws -> [Transfer] {
+        let outbox = try outboxFactory()
+        let completed = try await outbox.transfers().filter {
+            $0.batchID == batchID && $0.status == .completed
+        }
+        for transfer in completed {
+            _ = try await outbox.requestRemoval(transfer.id)
+        }
+        let archivedIDs = Set(completed.map(\.id))
+        transfers.removeAll { archivedIDs.contains($0.id) }
+        return completed
+    }
+
+    /// Puts failed items back in the queue without starting a drain. A name
+    /// clash on the share would only fail again, so those wait for the user.
+    func requeueFailed(in batchIDs: Set<UUID>) async {
+        do {
+            let outbox = try outboxFactory()
+            for transfer in try await outbox.transfers()
+            where transfer.status == .failed
+                && !transfer.hasItemSpecificFailure
+                && transfer.batchID.map(batchIDs.contains) == true {
+                replace(try await outbox.retry(transfer.id))
+            }
+        } catch {
+            message = error.localizedDescription
+        }
+    }
+
+    func report(_ message: String) {
+        self.message = message
     }
 
     func track(batchID: UUID) {
@@ -75,7 +133,17 @@ final class TransferQueueViewModel: ObservableObject {
         if #available(iOS 26.0, *), await submitContinuedProcessingTask() {
             return
         }
+        await startAutomaticTransfer()
+    }
 
+    /// For work the user did not just ask for, such as Automatic Backup.
+    /// Continued Processing is only for explicit user actions, so this keeps
+    /// to the short background window iOS gives any app.
+    func startAutomaticTransfer() async {
+        if isContinuedTaskRunning {
+            await resume()
+            return
+        }
         let backgroundAssertion = LegacyTransferBackgroundAssertion()
         backgroundAssertion.begin()
         await resume()
@@ -88,7 +156,8 @@ final class TransferQueueViewModel: ObservableObject {
         filename: String,
         destinationID: UUID,
         batchID: UUID,
-        moveSource: Bool = false
+        moveSource: Bool = false,
+        acceptsIdenticalExistingFile: Bool = false
     ) async throws -> Transfer {
         let outbox = try outboxFactory()
         let transfer = try await outbox.enqueueFile(
@@ -96,7 +165,8 @@ final class TransferQueueViewModel: ObservableObject {
             filename: filename,
             destinationID: destinationID,
             batchID: batchID,
-            moveSource: moveSource
+            moveSource: moveSource,
+            acceptsIdenticalExistingFile: acceptsIdenticalExistingFile
         )
         replace(transfer)
         return transfer
@@ -133,6 +203,9 @@ final class TransferQueueViewModel: ObservableObject {
             repeat {
                 resumeRequested = false
                 await performDrain()
+                if !resumeRequested, !Task.isCancelled, await stageMoreWorkIfIdle() {
+                    resumeRequested = true
+                }
             } while resumeRequested && !Task.isCancelled
             finishDrain(lifetime)
         }
@@ -226,6 +299,17 @@ final class TransferQueueViewModel: ObservableObject {
         }
     }
 
+    /// Only refills once nothing is queued or sending, so a failure, a claim
+    /// held by the Share Extension, or a missing share can never make this
+    /// stage an unbounded backlog.
+    private func stageMoreWorkIfIdle() async -> Bool {
+        guard !SampleContent.isEnabled,
+              let stageMoreWork,
+              !transfers.contains(where: { $0.status == .queued || $0.status == .uploading })
+        else { return false }
+        return await stageMoreWork()
+    }
+
     private func waitForDrain(_ lifetime: TransferDrainLifetime) async {
         await withCheckedContinuation { continuation in
             guard activeDrain?.id == lifetime.id else {
@@ -246,7 +330,9 @@ final class TransferQueueViewModel: ObservableObject {
         waiters.forEach { $0.resume() }
     }
 
-    private func cancelActiveDrain() {
+    /// Stops after the current item returns safely to the durable queue.
+    /// Used when the system ends a background task.
+    func cancelActiveDrain() {
         activeDrain?.task?.cancel()
     }
 
@@ -357,11 +443,13 @@ final class TransferQueueViewModel: ObservableObject {
         let task = context.task
         isContinuedTaskRunning = true
         reportContinuedProgress = { progress in
-            let totalUnits = max(1, progress.totalBytes)
+            // Photos not copied out yet have no size, so count items then.
+            let countsItems = progress.unstagedCount > 0
+            let totalUnits = max(1, countsItems ? Int64(progress.totalCount) : progress.totalBytes)
             task.progress.totalUnitCount = totalUnits
             task.progress.completedUnitCount = min(
                 totalUnits,
-                max(0, progress.bytesTransferred)
+                max(0, countsItems ? Int64(progress.completedCount) : progress.bytesTransferred)
             )
             let percent = Int(progress.fractionCompleted * 100)
             task.updateTitle(
@@ -385,7 +473,7 @@ final class TransferQueueViewModel: ObservableObject {
         }
         let hasFailure = trackedTransfers.contains { $0.status == .failed }
         task.setTaskCompleted(
-            success: !context.wasExpired && !hasUnfinished && !hasFailure
+            success: !context.wasExpired && !hasUnfinished && !hasFailure && !hasUnstagedWork
         )
         reportContinuedProgress = nil
         isContinuedTaskRunning = false

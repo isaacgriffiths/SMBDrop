@@ -10,7 +10,8 @@ enum SMBDropTab: Hashable {
 
 struct ContentView: View {
     @StateObject private var destinations = DestinationSetupViewModel()
-    @StateObject private var transferQueue = TransferQueueViewModel()
+    @ObservedObject private var transferQueue = TransferQueueViewModel.shared
+    @Environment(\.scenePhase) private var scenePhase
     @State private var selectedTab: SMBDropTab = .photos
     @AppStorage(SampleContent.defaultsKey) private var isSampleContentOn = false
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
@@ -66,6 +67,17 @@ struct ContentView: View {
             // the rating prompt at launch.
             if completedTransfersAtLaunch == nil {
                 completedTransfersAtLaunch = completedTransferCount
+            }
+        }
+        .onChange(of: scenePhase, initial: true) {
+            let backup = AutomaticBackupController.shared
+            switch scenePhase {
+            case .active:
+                Task { await backup.run(userInitiated: false) }
+            case .background:
+                backup.scheduleBackgroundTask()
+            default:
+                break
             }
         }
         .onChange(of: completedTransferCount) {

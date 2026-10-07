@@ -9,7 +9,6 @@ struct PhotoLibraryView: View {
     @StateObject private var library = PhotoLibraryViewModel()
     @State private var isSelecting = false
     @State private var isChoosingDestination = false
-    @State private var exportError: String?
     @State private var photoFrames: [String: CGRect] = [:]
     @State private var dragStartID: String?
     @State private var dragBaseSelection: Set<String> = []
@@ -72,17 +71,6 @@ struct PhotoLibraryView: View {
                 ) { destination in
                     Task { await sendSelection(to: destination) }
                 }
-            }
-            .alert(
-                "Could Not Send Photos",
-                isPresented: Binding(
-                    get: { exportError != nil },
-                    set: { if !$0 { exportError = nil } }
-                )
-            ) {
-                Button("OK", role: .cancel) { exportError = nil }
-            } message: {
-                Text(exportError ?? "Unknown error")
             }
             .task {
                 await library.requestAccess()
@@ -239,16 +227,24 @@ struct PhotoLibraryView: View {
                 } label: {
                     Label("Albums", systemImage: "chevron.left")
                 }
-                .disabled(library.isPreparing)
             }
-            ToolbarItem(placement: .topBarTrailing) {
+            ToolbarItemGroup(placement: .topBarTrailing) {
+                if isSelecting {
+                    Button(library.isAllSelected ? "Deselect All" : "Select All") {
+                        if library.isAllSelected {
+                            library.clearSelection()
+                        } else {
+                            library.selectAll()
+                        }
+                    }
+                }
                 Button(isSelecting ? "Cancel" : "Select") {
                     if isSelecting {
                         library.clearSelection()
                     }
                     isSelecting.toggle()
                 }
-                .disabled(library.items.isEmpty || library.isPreparing)
+                .disabled(library.items.isEmpty)
             }
         }
     }
@@ -260,13 +256,7 @@ struct PhotoLibraryView: View {
                 if transferQueue.activeProgress != nil {
                     TransferActivityView(transferQueue: transferQueue)
                 }
-                if library.isPreparing {
-                    ProgressView(
-                        "Preparing \(min(library.preparedCount + 1, max(1, library.resourceCount))) of \(library.resourceCount)…",
-                        value: Double(library.preparedCount),
-                        total: Double(max(1, library.resourceCount))
-                    )
-                } else if library.selectedCount > 0 {
+                if library.selectedCount > 0 {
                     Button {
                         if destinations.isEmpty {
                             selectedTab = .settings
@@ -275,7 +265,7 @@ struct PhotoLibraryView: View {
                         }
                     } label: {
                         Label(
-                            "Send \(library.selectedCount) Item\(library.selectedCount == 1 ? "" : "s")",
+                            "Send \(library.selectedCount.formatted()) Item\(library.selectedCount == 1 ? "" : "s")",
                             systemImage: "arrow.up.circle.fill"
                         )
                         .frame(maxWidth: .infinity)
@@ -296,16 +286,8 @@ struct PhotoLibraryView: View {
     }
 
     private func sendSelection(to destination: DestinationSummary) async {
-        do {
-            try await library.enqueueSelection(
-                to: destination,
-                transferQueue: transferQueue
-            )
-            isSelecting = false
-        } catch {
-            exportError = error.localizedDescription
-            await transferQueue.resume()
-        }
+        isSelecting = false
+        await library.sendSelection(to: destination, coordinator: .shared)
     }
 
     private func openSystemSettings() {

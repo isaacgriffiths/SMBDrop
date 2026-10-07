@@ -23,6 +23,10 @@ struct Transfer: Codable, Equatable, Identifiable, Sendable {
     var attemptCount: Int
     var remoteFilename: String?
     var errorMessage: String?
+    /// Automatic Backup may meet files it already sent (a reinstall, or a
+    /// photo the user also sent by hand). An existing file with the same name
+    /// and byte count then counts as uploaded; any other clash still stops.
+    var acceptsIdenticalExistingFile: Bool? = nil
 }
 
 struct TransferWork: Sendable {
@@ -83,7 +87,8 @@ actor TransferOutbox {
         filename: String,
         destinationID: UUID,
         batchID: UUID,
-        moveSource: Bool = false
+        moveSource: Bool = false,
+        acceptsIdenticalExistingFile: Bool = false
     ) throws -> Transfer {
         let filename = try canonicalFilename(filename)
         let resourceValues = try sourceURL.resourceValues(
@@ -120,7 +125,8 @@ actor TransferOutbox {
                 bytesTransferred: 0,
                 attemptCount: 0,
                 remoteFilename: nil,
-                errorMessage: nil
+                errorMessage: nil,
+                acceptsIdenticalExistingFile: acceptsIdenticalExistingFile ? true : nil
             )
             let directoryURL = transferDirectoryURL(for: transfer.id)
 

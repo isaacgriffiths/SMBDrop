@@ -10,6 +10,8 @@ struct SettingsView: View {
     @State private var destinationToRemove: DestinationSummary?
     @State private var blockedDestinationRemoval: DestinationSummary?
     @State private var destinationRemovalError: String?
+    @ObservedObject private var backup = AutomaticBackupController.shared
+    @ObservedObject private var photoExports = PhotoExportCoordinator.shared
     @AppStorage(SampleContent.defaultsKey) private var isSampleContentOn = false
 
     private var displayedDestinations: [DestinationSummary] {
@@ -67,6 +69,24 @@ struct SettingsView: View {
                 }
 
                 Section("Transfers") {
+                    NavigationLink {
+                        AutomaticBackupView(
+                            destinations: displayedDestinations,
+                            transferQueue: transferQueue
+                        )
+                    } label: {
+                        HStack(spacing: 14) {
+                            settingsIcon("photo.badge.arrow.down.fill", color: .purple)
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text("Automatic Backup")
+                                    .foregroundStyle(.primary)
+                                Text(backupSummary)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                    .disabled(isSampleContentOn)
                     NavigationLink {
                         TransferHistoryView(transferQueue: transferQueue)
                     } label: {
@@ -177,6 +197,16 @@ struct SettingsView: View {
                 await transferQueue.refresh()
             }
         }
+    }
+
+    private var backupSummary: String {
+        guard backup.isEnabled else { return "Off" }
+        let name = displayedDestinations.first(where: { $0.id == backup.destinationID })?.displayName
+        let pending = photoExports.pendingBackupCount
+        if pending > 0 {
+            return "\(pending.formatted()) waiting · \(name ?? "No share")"
+        }
+        return "On · \(name ?? "No share")"
     }
 
     private var transferSummary: String {

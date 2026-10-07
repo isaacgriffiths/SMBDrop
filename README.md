@@ -14,7 +14,8 @@ I kept struggling to get videos and files off my iPhone and onto my share drive.
 
 **Send**
 
-- Pick photos and videos from Recents or any album, with multi-select and drag-to-select a range.
+- Pick photos and videos from Recents or any album, with multi-select, Select All, and drag-to-select a range. Large selections are copied out a chunk at a time, so sending a whole library never doubles it on disk.
+- Automatic Backup sends every new photo and video to a chosen share when the app opens and overnight while charging.
 - Original quality. Live Photos send both halves, HEIC and video are never transcoded.
 - Send any file through Apple's Files picker (iCloud Drive, On My iPhone, third-party providers).
 - Share from any app through the iOS share sheet via the bundled Share Extension.
@@ -49,6 +50,7 @@ The app is developed on Windows, where Xcode does not exist. The cloud Mac build
 
 ```
 SMBDrop/            Main app: Photos, Files, Import and Settings tabs
+  PhotoExport/      Chunked photo export queue and Automatic Backup
   Networking/       Connection test, share and folder listing, import service
   ViewModels/       Destination setup, photo library, transfer queue, imports
   Views/            SwiftUI screens, onboarding, settings, transfer activity
@@ -56,7 +58,7 @@ ShareExtension/     Share-sheet surface: destination chooser and inline send
 Shared/             Code compiled into both targets
   Destination.swift, DestinationStore.swift, PasswordVault.swift
   Transfers/        Durable outbox, transfer worker, batch progress
-SMBDropTests/       XCTest unit tests (64 test cases)
+SMBDropTests/       XCTest unit tests (77 test cases)
 feedback-worker/    Cloudflare Worker behind Settings > Request a Feature
 fastlane/           Lanes, match config, App Store metadata and screenshots
 marketing/          Screenshot editor and App Review correspondence

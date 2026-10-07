@@ -23,6 +23,11 @@
 	<key>BGTaskSchedulerPermittedIdentifiers</key>
 	<array>
 		<string>com.isaacgriffiths.smbdrop.transfer.*</string>
+		<string>com.isaacgriffiths.smbdrop.backup</string>
+	</array>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>processing</string>
 	</array>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
@@ -31,7 +36,7 @@
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>SMBDrop connects to your SMB shares over your local network to send and import files.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>SMBDrop shows your photo library and albums so you can pick photos and videos to send to your SMB share.</string>
+	<string>SMBDrop shows your photo library and albums so you can pick photos and videos to send to your SMB share, and backs up new ones if you turn on Automatic Backup.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>SMBDrop can save imported photos and videos to your photo library when you ask it to.</string>
 	<key>LSSupportsOpeningDocumentsInPlace</key>

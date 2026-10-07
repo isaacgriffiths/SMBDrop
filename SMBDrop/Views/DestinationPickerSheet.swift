@@ -3,6 +3,7 @@ import SwiftUI
 struct DestinationPickerSheet: View {
     let destinations: [DestinationSummary]
     let itemCount: Int
+    var title: String?
     let onSelect: (DestinationSummary) -> Void
     @Environment(\.dismiss) private var dismiss
 
@@ -46,7 +47,7 @@ struct DestinationPickerSheet: View {
                     }
                 }
             }
-            .navigationTitle("Send \(itemCount) Item\(itemCount == 1 ? "" : "s") To")
+            .navigationTitle(title ?? "Send \(itemCount.formatted()) Item\(itemCount == 1 ? "" : "s") To")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {

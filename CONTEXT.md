@@ -8,6 +8,7 @@
 - **Onboarding** — first-run full-screen flow: welcome → how sending works (tabs + share sheet) → add-first-Destination using the same verified editor as Settings, with a Set Up Later escape. Shown only while no Destination exists and never again after completion (`hasCompletedOnboarding`).
 - **Review prompt** — the native StoreKit rating panel is requested once, ~1.5s after the user's first successful Import (`hasRequestedReview`), never during Sample Content.
 - **Feature requests** — Settings › Request a Feature posts to the `smbdrop-feedback` Cloudflare Worker (`feedback-worker/`), which emails Isaac via Resend; if the relay fails the form offers a mailto fallback.
+- **Automatic Backup** — Settings › Automatic Backup sends every photo and video in the library to one chosen share without the user picking them. Turning it on asks whether to back up everything already in the library or only items added from now on.
 - **Test Connection** — the explicit connect-and-verify step run against a Destination before it is trusted.
 - **Import** — one or more files downloaded from a configured Destination into the app's on-device `SMBDrop Imports` folder, visible in Files under On My iPhone.
 
@@ -49,3 +50,14 @@
 - Small shares may drain inline while the share sheet remains open. Large shares, dismissal, or any inline failure leave the staged items queued for the Main App rather than losing them.
 - The extension cannot promise background SMB transfer after dismissal. It tells the user when work is queued and the Main App resumes on its next foreground run.
 - Activation is bounded to images, movies, and files; the extension never uses `TRUEPREDICATE`.
+
+## Photo exports and Automatic Backup
+
+- Photos sends and backups are queued as lists of library identifiers in the main app's own container (`PhotoExportQueue`), not copied up front. The transfer queue asks for the next chunk (20 photos or 1 GB) only once the outbox has nothing queued, so Select All over a whole library costs one chunk of disk at a time.
+- A finished chunk's completed items are cleared from the outbox and folded into the batch's counts, so a 20,000-photo backup never leaves 20,000 outbox records behind. Progress (`N of X`) still covers the whole batch.
+- A user's own send is staged ahead of a backup already in progress.
+- A chunk that got nothing through because of the share or network pauses its batch until the next run (opening the app, Back Up Now, or the background task). This stops an away-from-home backup copying out and failing the entire library. Failed staging (three in a row) pauses the same way.
+- Backups set `acceptsIdenticalExistingFile`: a file already on the share with the exact same name and byte count counts as uploaded (reinstalls, photos already sent by hand). Anything else with that name still stops and asks; SMBDrop never renames or overwrites.
+- A photo counts as backed up once it is staged into the durable outbox, recorded in an append-only ledger. Each run retries backup failures that a better connection could fix; name clashes wait for the user.
+- iOS gives apps no hook for "a photo was taken", so a backup runs when SMBDrop becomes active, while it stays open (debounced library changes), and in a `BGProcessingTask` (`com.isaacgriffiths.smbdrop.backup`) that requires power and network, which iOS usually runs overnight. Only an explicit tap may use a Continued Processing Task; automatic runs use the ordinary background window.
+- Automatic Backup needs full photo-library access; limited access shows a prompt to change it.
